@@ -1,13 +1,13 @@
 use anyhow::{Context, Result};
 use clap::{App, Arg};
 use std::fs::File;
-use std::io::prelude::*;
 use std::path::Path;
 
-mod canvas;
+mod data;
 mod ppm;
+mod tracer;
 
-use canvas::*;
+use data::*;
 
 const OUT_PARAM: &str = "out";
 
@@ -45,13 +45,7 @@ fn run(out_path: &Path) -> Result<()> {
             let g = (j as f64) / (canvas.height as f64);
             let b = 0.2 as f64;
 
-            let ir = (r * 255.99) as u8;
-            let ig = (g * 255.99) as u8;
-            let ib = (b * 255.99) as u8;
-            let p = canvas.at_mut(j, i);
-            p.r = ir;
-            p.g = ig;
-            p.b = ib;
+            canvas.set(j, i, Vec3(r, g, b))
         }
     }
 
