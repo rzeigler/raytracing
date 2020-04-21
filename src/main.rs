@@ -33,22 +33,11 @@ fn main() {
     }
 }
 
-const IMAGE_WIDTH: usize = 200;
-const IMAGE_HEIGHT: usize = 100;
+const IMAGE_WIDTH: usize = 1600;
+const IMAGE_HEIGHT: usize = 800;
 
 fn run(out_path: &Path) -> Result<()> {
-    let mut canvas = Canvas::new(IMAGE_HEIGHT, IMAGE_WIDTH);
-
-    for j in (0..canvas.height).rev() {
-        for i in 0..canvas.width {
-            let r = (i as f64) / (canvas.width as f64);
-            let g = (j as f64) / (canvas.height as f64);
-            let b = 0.2 as f64;
-
-            canvas.set(j, i, Vec3(r, g, b))
-        }
-    }
-
+    let canvas = tracer::draw(IMAGE_HEIGHT, IMAGE_WIDTH);
     let mut out_file = File::create(out_path)
         .with_context(|| format!("unable to open {} for writting", out_path.to_string_lossy()))?;
 

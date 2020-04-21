@@ -22,6 +22,18 @@ impl Vec3 {
         )
     }
 
+    pub fn x(&self) -> f64 {
+        self.0
+    }
+
+    pub fn y(&self) -> f64 {
+        self.1
+    }
+
+    pub fn z(&self) -> f64 {
+        self.2
+    }
+
     pub fn unit_vector(&self) -> Vec3 {
         *self / self.length()
     }
@@ -87,7 +99,8 @@ impl Div<f64> for Vec3 {
     }
 }
 
-const ZERO: Vec3 = Vec3(0f64, 0f64, 0f64);
+pub const ZERO: Vec3 = Vec3(0f64, 0f64, 0f64);
+pub const UNIT: Vec3 = Vec3(1f64, 1f64, 1f64);
 
 pub struct Canvas {
     pub width: usize,
@@ -123,7 +136,7 @@ impl Canvas {
     //     &mut self.pixels[x][y]
     // }
 
-    pub fn set(&mut self, x: usize, y: usize, vec: Vec3) {
+    pub fn set(&mut self, y: usize, x: usize, vec: Vec3) {
         self.pixels[x][y] = vec;
     }
 }
@@ -134,6 +147,9 @@ pub struct Ray {
 }
 
 impl Ray {
+    pub fn new(origin: Vec3, direction: Vec3) -> Ray {
+        Ray { origin, direction }
+    }
     pub fn at(&self, t: f64) -> Vec3 {
         self.origin + self.direction * t
     }
