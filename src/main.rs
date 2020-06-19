@@ -54,26 +54,54 @@ fn main() -> Result<()> {
 }
 
 fn run(width: u32, height: u32, out_path: &Path) -> Result<()> {
+    // Draw the image
     let mut canvas = Canvas::new(width, height);
-    for j in (0..height).rev() {
-        for i in 0..width {
-            let r = f64::from(i as u32) / f64::from(width - 1);
-            let g = f64::from(j) / f64::from(height - 1);
-            let b = 0.25f64;
+    draw(&mut canvas);
+    write_png(&canvas, &out_path)
+}
+
+fn draw(canvas: &mut Canvas) {
+    let aspect_ratio = canvas.width as f64 / canvas.height as f64;
+    let viewport_height = 2.0f64;
+    let viewport_width = aspect_ratio * viewport_height;
+    let focal_length = 1.0f64;
+    let origin = Vec3::new(0.0, 0.0, 0.0);
+    let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
+    let vertical = Vec3::new(0.0, viewport_height as f64, 0.0);
+    let lower_left_corner =
+        origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
+
+    for j in (0..canvas.height).rev() {
+        for i in 0..canvas.width {
+            let u = (i as f64) / (canvas.width as f64 - 1.0);
+            let v = (j as f64) / (canvas.height as f64 - 1.0);
             let pixel = canvas.at_mut(i, j);
-            pixel.set_rgb((255.99 * r) as u8, (255.99 * g) as u8, (255.99 * b) as u8);
+            let ray = Ray::new(
+                origin,
+                lower_left_corner + (u * horizontal) + (v * vertical) - origin,
+            );
+            pixel.set_color(&ray_color(&ray));
             pixel.set_alpha(255);
         }
     }
+}
+
+fn ray_color(r: &Ray) -> Vec3 {
+    let unit_direction = r.direction.unit();
+    let t = 0.5f64 * unit_direction.y + 1.0;
+    (1.0 - t) * Vec3::new(1.0, 1.0, 1.0) + t * Vec3::new(0.5, 0.7, 1.0)
+}
+
+fn write_png(canvas: &Canvas, out_path: &Path) -> Result<()> {
+    // Do PNG things
     let file = File::create(out_path)
         .with_context(|| format!("failed to open output path: {:?}", out_path))?;
     let writer = BufWriter::new(file);
-    let mut encoder = png::Encoder::new(writer, width, height);
+    let mut encoder = png::Encoder::new(writer, canvas.width, canvas.height);
     encoder.set_color(png::ColorType::RGBA);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().context("failed to write header")?;
     writer
         .write_image_data(&canvas.rgba_bytes()[..])
-        .context("failed to write data")?;
-    Ok(())
+        .context("failed to write data")
 }
