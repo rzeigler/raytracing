@@ -1,6 +1,7 @@
 #![warn(clippy::all)]
 use anyhow::{Context, Result};
 use clap::{value_t, App, Arg};
+use rand::prelude::*;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
@@ -61,34 +62,51 @@ fn run(width: u32, height: u32, out_path: &Path) -> Result<()> {
 }
 
 fn draw(canvas: &mut Canvas) {
-    let aspect_ratio = canvas.width as f64 / canvas.height as f64;
-    let viewport_height = 2.0f64;
-    let viewport_width = aspect_ratio * viewport_height;
-    let focal_length = 1.0f64;
-    let origin = Vec3::new(0.0, 0.0, 0.0);
-    let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
-    let vertical = Vec3::new(0.0, viewport_height as f64, 0.0);
-    let lower_left_corner =
-        origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
+    let max_depth = 50u32;
+    let samples_per_pixel = 100usize;
+    let image_width = canvas.width as f64;
+    let image_height = canvas.height as f64;
+    let camera = Camera::new(image_width, image_height);
+
+    let world: Vec<Box<dyn CanHit>> = vec![
+        Box::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5)),
+        Box::new(Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0)),
+    ];
+
+    let mut rng = rand::thread_rng();
 
     for j in (0..canvas.height).rev() {
         for i in 0..canvas.width {
-            let u = (i as f64) / (canvas.width as f64 - 1.0);
-            let v = (j as f64) / (canvas.height as f64 - 1.0);
+            let mut color = Vec3::new(0.0, 0.0, 0.0);
+            for _ in 0..samples_per_pixel {
+                let u = (i as f64 + rng.gen::<f64>()) / (image_width - 1.0);
+                let v = (j as f64 + rng.gen::<f64>()) / (image_height - 1.0);
+                let ray = camera.cast(u, v);
+                color += ray_color(&ray, &world, &mut rng, max_depth);
+            }
             let pixel = canvas.at_mut(i, j);
-            let ray = Ray::new(
-                origin,
-                lower_left_corner + (u * horizontal) + (v * vertical) - origin,
-            );
-            pixel.set_color(&ray_color(&ray));
+            pixel.set_color_sampled(&color, samples_per_pixel);
             pixel.set_alpha(255);
         }
     }
 }
 
-fn ray_color(r: &Ray) -> Vec3 {
+fn ray_color<R: Rng>(r: &Ray, world: &[Box<dyn CanHit>], rng: &mut R, depth: u32) -> Vec3 {
+    if depth == 0 {
+        return Vec3::new(0.0, 0.0, 0.0);
+    }
+    if let Some(hit) = world.hit(r, 0.0, std::f64::INFINITY) {
+        let target = hit.point + hit.normal + Vec3::random_in_sphere(rng);
+        return 0.5
+            * ray_color(
+                &Ray::new(hit.point, target - hit.point),
+                world,
+                rng,
+                depth - 1,
+            );
+    }
     let unit_direction = r.direction.unit();
-    let t = 0.5f64 * unit_direction.y + 1.0;
+    let t = 0.5f64 * (unit_direction.y + 1.0);
     (1.0 - t) * Vec3::new(1.0, 1.0, 1.0) + t * Vec3::new(0.5, 0.7, 1.0)
 }
 

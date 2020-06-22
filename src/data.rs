@@ -1,4 +1,9 @@
-use std::ops::{Add, Div, Mul, Sub};
+use rand::prelude::*;
+use std::ops::{Add, AddAssign, Div, Mul, Sub};
+
+pub fn degrees_to_radians(degress: f64) -> f64 {
+    degress * std::f64::consts::PI / 180.0
+}
 
 #[derive(Clone)]
 pub struct Pixel {
@@ -54,6 +59,16 @@ impl Pixel {
         self.set_green((color.y * 255.99) as u8);
         self.set_blue((color.z * 255.99) as u8);
     }
+
+    pub fn set_color_sampled(&mut self, color: &Vec3, samples: usize) {
+        let scale = 1.0f64 / (samples as f64);
+
+        let r = color.x * scale;
+        let g = color.y * scale;
+        let b = color.z * scale;
+
+        self.set_color(&Vec3::new(r, g, b));
+    }
 }
 
 pub struct Canvas {
@@ -93,6 +108,46 @@ impl Canvas {
             }
         }
         buffer
+    }
+}
+
+static focal_length: f64 = 1.0;
+
+pub fn origin() -> Vec3 {
+    Vec3::new(0.0, 0.0, 0.0)
+}
+
+pub struct Camera {
+    viewport_height: f64,
+    viewport_width: f64,
+    horizontal: Vec3,
+    vertical: Vec3,
+    lower_left_corner: Vec3,
+}
+
+impl Camera {
+    pub fn new(width: f64, height: f64) -> Camera {
+        let aspect_ratio = width / height;
+        let viewport_height = 2f64;
+        let viewport_width = viewport_height * aspect_ratio;
+        let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
+        let vertical = Vec3::new(0.0, viewport_height, 0.0);
+        let lower_left_corner =
+            origin() - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
+        Camera {
+            viewport_height,
+            viewport_width,
+            horizontal,
+            vertical,
+            lower_left_corner,
+        }
+    }
+
+    pub fn cast(&self, u: f64, v: f64) -> Ray {
+        Ray::new(
+            origin(),
+            self.lower_left_corner + u * self.horizontal + v * self.vertical - origin(),
+        )
     }
 }
 
@@ -149,12 +204,33 @@ impl Vec3 {
         self.div_scalar(self.length())
     }
 
-    fn mahattan_squared(&self) -> f64 {
+    pub fn length_squared(&self) -> f64 {
         self.x.powi(2) + self.y.powi(2) + self.z.powi(2)
     }
 
     pub fn length(&self) -> f64 {
-        self.mahattan_squared().sqrt()
+        self.length_squared().sqrt()
+    }
+
+    pub fn random<R: Rng>(rng: &mut R) -> Vec3 {
+        Vec3::new(rng.gen(), rng.gen(), rng.gen())
+    }
+
+    pub fn random_clamped<R: Rng>(rng: &mut R, min: f64, max: f64) -> Vec3 {
+        Vec3::new(
+            rng.gen_range(min, max),
+            rng.gen_range(min, max),
+            rng.gen_range(min, max),
+        )
+    }
+
+    pub fn random_in_sphere<R: Rng>(rng: &mut R) -> Vec3 {
+        loop {
+            let v = Vec3::random(rng);
+            if v.length_squared() < 1.0 {
+                return v;
+            }
+        }
     }
 }
 
@@ -179,6 +255,14 @@ impl Add for Vec3 {
     type Output = Vec3;
     fn add(self, rhs: Vec3) -> Vec3 {
         Vec3::new(self.x + rhs.x, self.y + rhs.y, self.z + rhs.z)
+    }
+}
+
+impl AddAssign for Vec3 {
+    fn add_assign(&mut self, other: Self) {
+        self.x += other.x;
+        self.y += other.y;
+        self.z += other.z;
     }
 }
 
@@ -232,5 +316,91 @@ pub struct Ray {
 impl Ray {
     pub fn new(origin: Vec3, direction: Vec3) -> Ray {
         Ray { origin, direction }
+    }
+
+    pub fn at(&self, t: f64) -> Vec3 {
+        self.origin + t * self.direction
+    }
+}
+
+pub struct Hit {
+    pub point: Vec3,
+    pub normal: Vec3,
+    pub t: f64,
+    pub front_face: bool,
+}
+
+impl Hit {
+    pub fn new(point: Vec3, t: f64, ray: &Ray, outward_normal: &Vec3) -> Hit {
+        let front_face = ray.direction.dot(outward_normal) < 0.0;
+        let real_normal = if front_face {
+            *outward_normal
+        } else {
+            *outward_normal * -1.0
+        };
+        Hit {
+            point,
+            normal: real_normal,
+            t,
+            front_face,
+        }
+    }
+}
+
+pub trait CanHit {
+    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64) -> Option<Hit>;
+}
+
+pub struct Sphere {
+    pub center: Vec3,
+    pub radius: f64,
+}
+
+impl Sphere {
+    pub fn new(center: Vec3, radius: f64) -> Sphere {
+        Sphere { center, radius }
+    }
+}
+
+impl CanHit for Sphere {
+    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64) -> Option<Hit> {
+        let oc = ray.origin - self.center;
+        let a = ray.direction.length_squared();
+        let half_b = oc.dot(&ray.direction);
+        let c = oc.length_squared() - self.radius.powi(2);
+        let discriminant = half_b.powi(2) - a * c;
+        if discriminant > 0.0 {
+            let root = discriminant.sqrt();
+            let t1 = (-half_b - root) / a;
+            let found1 = if t1 < t_max && t1 > t_min {
+                let point = ray.at(t1);
+                let outward_normal = (point - self.center) / self.radius;
+                Some(Hit::new(point, t1, ray, &outward_normal))
+            } else {
+                None
+            };
+            let t2 = (-half_b + root) / a;
+            let found2 = if t2 < t_max && t2 > t_min {
+                let point = ray.at(t2);
+                let outward_normal = (point - self.center) / self.radius;
+                Some(Hit::new(point, t2, ray, &outward_normal))
+            } else {
+                None
+            };
+            // We are wastefull because we compute both... oh well
+            return found2.or(found1);
+        }
+        None
+    }
+}
+
+impl CanHit for &[Box<dyn CanHit>] {
+    fn hit(&self, ray: &Ray, t_min: f64, t_max: f64) -> Option<Hit> {
+        let mut maybe_hit: Option<Hit> = None;
+        for can_hit in self.iter() {
+            let _t_max = maybe_hit.as_ref().map(|h| h.t).unwrap_or(t_max);
+            maybe_hit = can_hit.hit(ray, t_min, _t_max).or(maybe_hit);
+        }
+        maybe_hit
     }
 }
