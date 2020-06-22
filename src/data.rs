@@ -227,7 +227,7 @@ impl Vec3 {
 
     pub fn random_in_sphere<R: Rng>(rng: &mut R) -> Vec3 {
         loop {
-            let v = Vec3::random(rng);
+            let v = Vec3::random_clamped(rng, -1.0, 1.0);
             if v.length_squared() < 1.0 {
                 return v;
             }

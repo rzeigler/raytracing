@@ -103,7 +103,7 @@ fn draw(canvas: &mut Canvas) {
                     let u = (i as f64 + rng.gen::<f64>()) / (image_width - 1.0);
                     let v = (j as f64 + rng.gen::<f64>()) / (image_height - 1.0);
                     let ray = camera.cast(u, v);
-                    color += ray_color(&ray, &world, &mut rng, max_depth);
+                    color += ray_color(&mut rng, &ray, &world, max_depth);
                 }
                 pixel.set_color_sampled(&color, samples_per_pixel);
                 pixel.set_alpha(255);
@@ -111,20 +111,19 @@ fn draw(canvas: &mut Canvas) {
         });
 }
 
-fn ray_color<R: Rng>(r: &Ray, world: &[Box<dyn CanHit + Sync>], rng: &mut R, depth: u32) -> Vec3 {
+fn ray_color<R: Rng>(rng: &mut R, r: &Ray, world: &[Box<dyn CanHit + Sync>], depth: u32) -> Vec3 {
+    if depth == 0 {
+        return Vec3::new(0.0, 0.0, 0.0);
+    }
     if let Some(hit) = world.hit(r, 0.0, std::f64::INFINITY) {
-        if depth == 0 {
-            return Vec3::new(0.0, 0.0, 0.0);
-        } else {
-            let target = hit.point + hit.normal + Vec3::random_in_sphere(rng);
-            return 0.5
-                * ray_color(
-                    &Ray::new(hit.point, target - hit.point),
-                    world,
-                    rng,
-                    depth - 1,
-                );
-        }
+        let target = hit.point + hit.normal + Vec3::random_in_sphere(rng);
+        return 0.5
+            * ray_color(
+                rng,
+                &Ray::new(hit.point, target - hit.point),
+                world,
+                depth - 1,
+            );
     }
     let unit_direction = r.direction.unit();
     let t = 0.5f64 * (unit_direction.y + 1.0);
