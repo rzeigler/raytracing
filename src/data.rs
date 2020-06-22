@@ -74,7 +74,8 @@ impl Pixel {
 pub struct Canvas {
     pub width: u32,
     pub height: u32,
-    pub bytes: Vec<Vec<Pixel>>,
+    // Pixels in form [y][x]
+    pub pixels: Vec<Vec<Pixel>>,
 }
 
 impl Canvas {
@@ -82,16 +83,16 @@ impl Canvas {
         Canvas {
             width,
             height,
-            bytes: vec![vec![Pixel::new(); width as usize]; height as usize],
+            pixels: vec![vec![Pixel::new(); width as usize]; height as usize],
         }
     }
 
     pub fn at(&self, x: u32, y: u32) -> &Pixel {
-        &self.bytes[y as usize][x as usize]
+        &self.pixels[y as usize][x as usize]
     }
 
     pub fn at_mut(&mut self, x: u32, y: u32) -> &mut Pixel {
-        &mut self.bytes[y as usize][x as usize]
+        &mut self.pixels[y as usize][x as usize]
     }
 
     pub fn rgba_bytes(&self) -> Vec<u8> {
@@ -111,7 +112,7 @@ impl Canvas {
     }
 }
 
-static focal_length: f64 = 1.0;
+static FOCAL_LENGTH: f64 = 1.0;
 
 pub fn origin() -> Vec3 {
     Vec3::new(0.0, 0.0, 0.0)
@@ -133,7 +134,7 @@ impl Camera {
         let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
         let vertical = Vec3::new(0.0, viewport_height, 0.0);
         let lower_left_corner =
-            origin() - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
+            origin() - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, FOCAL_LENGTH);
         Camera {
             viewport_height,
             viewport_width,
@@ -394,7 +395,7 @@ impl CanHit for Sphere {
     }
 }
 
-impl CanHit for &[Box<dyn CanHit>] {
+impl CanHit for &[Box<dyn CanHit + Sync>] {
     fn hit(&self, ray: &Ray, t_min: f64, t_max: f64) -> Option<Hit> {
         let mut maybe_hit: Option<Hit> = None;
         for can_hit in self.iter() {

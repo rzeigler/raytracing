@@ -2,6 +2,7 @@
 use anyhow::{Context, Result};
 use clap::{value_t, App, Arg};
 use rand::prelude::*;
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
@@ -64,34 +65,55 @@ fn run(width: u32, height: u32, out_path: &Path) -> Result<()> {
 fn draw(canvas: &mut Canvas) {
     let max_depth = 50u32;
     let samples_per_pixel = 100usize;
-    let image_width = canvas.width as f64;
-    let image_height = canvas.height as f64;
+    let canvas_width = canvas.width as usize;
+    let canvas_height = canvas.height as usize;
+    let image_width = canvas_width as f64;
+    let image_height = canvas_height as f64;
     let camera = Camera::new(image_width, image_height);
 
-    let world: Vec<Box<dyn CanHit>> = vec![
+    let world: Vec<Box<dyn CanHit + Sync>> = vec![
         Box::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5)),
         Box::new(Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0)),
     ];
 
-    let mut rng = rand::thread_rng();
-
-    for j in (0..canvas.height).rev() {
-        for i in 0..canvas.width {
-            let mut color = Vec3::new(0.0, 0.0, 0.0);
-            for _ in 0..samples_per_pixel {
-                let u = (i as f64 + rng.gen::<f64>()) / (image_width - 1.0);
-                let v = (j as f64 + rng.gen::<f64>()) / (image_height - 1.0);
-                let ray = camera.cast(u, v);
-                color += ray_color(&ray, &world, &mut rng, max_depth);
+    canvas
+        .pixels
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(jidx, row)| {
+            let j = canvas_height - jidx - 1;
+            let mut rng = rand::thread_rng();
+            for (i, pixel) in row.iter_mut().enumerate() {
+                let mut color = Vec3::new(0.0, 0.0, 0.0);
+                for _ in 0..samples_per_pixel {
+                    let u = (i as f64 + rng.gen::<f64>()) / (image_width - 1.0);
+                    let v = (j as f64 + rng.gen::<f64>()) / (image_height - 1.0);
+                    let ray = camera.cast(u, v);
+                    let w = &world[..];
+                    color += ray_color(&ray, w, &mut rng, max_depth);
+                }
+                pixel.set_color_sampled(&color, samples_per_pixel);
+                pixel.set_alpha(255);
             }
-            let pixel = canvas.at_mut(i, j);
-            pixel.set_color_sampled(&color, samples_per_pixel);
-            pixel.set_alpha(255);
-        }
-    }
+        });
+
+    // for j in (0..canvas.height).rev() {
+    //     for i in 0..canvas.width {
+    //         let mut color = Vec3::new(0.0, 0.0, 0.0);
+    //         for _ in 0..samples_per_pixel {
+    //             let u = (i as f64 + rng.gen::<f64>()) / (image_width - 1.0);
+    //             let v = (j as f64 + rng.gen::<f64>()) / (image_height - 1.0);
+    //             let ray = camera.cast(u, v);
+    //             color += ray_color(&ray, &world[..], &mut rng, max_depth);
+    //         }
+    //         let pixel = canvas.at_mut(i, j);
+    //         pixel.set_color_sampled(&color, samples_per_pixel);
+    //         pixel.set_alpha(255);
+    //     }
+    // }
 }
 
-fn ray_color<R: Rng>(r: &Ray, world: &[Box<dyn CanHit>], rng: &mut R, depth: u32) -> Vec3 {
+fn ray_color<R: Rng>(r: &Ray, world: &[Box<dyn CanHit + Sync>], rng: &mut R, depth: u32) -> Vec3 {
     if depth == 0 {
         return Vec3::new(0.0, 0.0, 0.0);
     }
