@@ -1,8 +1,6 @@
 #![warn(clippy::all)]
 use anyhow::{Context, Result};
 use clap::{value_t, App, Arg};
-use rand::prelude::*;
-use rayon::prelude::*;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
@@ -56,90 +54,39 @@ fn main() -> Result<()> {
 }
 
 fn run(width: u32, height: u32, out_path: &Path) -> Result<()> {
-    // Draw the image
-    let mut canvas = Canvas::new(width, height);
-    draw(&mut canvas);
-    write_png(&canvas, &out_path)
+    let content = draw(width, height);
+    write_png(width, height, &content, out_path)
 }
 
-fn draw(canvas: &mut Canvas) {
-    let max_depth = 50u32;
-    let samples_per_pixel = 100usize;
-    let image_width = f64::from(canvas.width);
-    let image_height = f64::from(canvas.height);
-    let camera = Camera::new(image_width, image_height);
-
-    let world: Vec<Box<dyn CanHit + Sync>> = vec![
-        Box::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5)),
-        Box::new(Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0)),
-    ];
-
-    // let mut rng = rand::thread_rng();
-
-    // for j in (0..canvas.height).rev() {
-    //     for i in 0..canvas.width {
-    //         let mut color = Vec3::new(0.0, 0.0, 0.0);
-    //         for _ in 0..samples_per_pixel {
-    //             let u = (i as f64 + rng.gen::<f64>()) / (image_width - 1.0);
-    //             let v = (j as f64 + rng.gen::<f64>()) / (image_height - 1.0);
-    //             let ray = camera.cast(u, v);
-    //             color += ray_color(&ray, &world, &mut rng, max_depth);
-    //         }
-    //         let pixel = canvas.at_mut(i, j);
-    //         pixel.set_color_sampled(&color, samples_per_pixel);
-    //         pixel.set_alpha(255);
-    //     }
-    // }
-
-    canvas
-        .pixels
-        .par_iter_mut()
-        .enumerate()
-        .for_each(|(j, row)| {
-            for (i, pixel) in row.iter_mut().enumerate() {
-                let mut rng = rand::thread_rng();
-                let mut color = Vec3::new(0.0, 0.0, 0.0);
-                for _ in 0..samples_per_pixel {
-                    let u = (i as f64 + rng.gen::<f64>()) / (image_width - 1.0);
-                    let v = (j as f64 + rng.gen::<f64>()) / (image_height - 1.0);
-                    let ray = camera.cast(u, v);
-                    color += ray_color(&mut rng, &ray, &world, max_depth);
-                }
-                pixel.set_color_sampled(&color, samples_per_pixel);
-                pixel.set_alpha(255);
-            }
-        });
+fn draw(width: u32, height: u32) -> Vec<u8> {
+    let image_width = width as f64;
+    let image_height = height as f64;
+    let size = width as usize * height as usize * 4;
+    let mut result = Vec::with_capacity(size);
+    (0..height)
+        .rev() // most positive x written first in png format
+        .flat_map(|j| {
+            (0..width).map(move |i| {
+                let r = (i as f64) / (image_width - 1.0);
+                let g = (j as f64) / (image_height - 1.0);
+                let b = 0.25f64;
+                Pixel::new_from_f64(r, g, b, 1.0)
+            })
+        })
+        .for_each(|pixel| result.extend_from_slice(&pixel.data));
+    result
 }
 
-fn ray_color<R: Rng>(rng: &mut R, r: &Ray, world: &[Box<dyn CanHit + Sync>], depth: u32) -> Vec3 {
-    if depth == 0 {
-        return Vec3::new(0.0, 0.0, 0.0);
-    }
-    if let Some(hit) = world.hit(r, 0.0, std::f64::INFINITY) {
-        let target = hit.point + hit.normal + Vec3::random_in_sphere(rng);
-        return 0.5
-            * ray_color(
-                rng,
-                &Ray::new(hit.point, target - hit.point),
-                world,
-                depth - 1,
-            );
-    }
-    let unit_direction = r.direction.unit();
-    let t = 0.5f64 * (unit_direction.y + 1.0);
-    (1.0 - t) * Vec3::new(1.0, 1.0, 1.0) + t * Vec3::new(0.5, 0.7, 1.0)
-}
-
-fn write_png(canvas: &Canvas, out_path: &Path) -> Result<()> {
+fn write_png(width: u32, height: u32, data: &Vec<u8>, out_path: &Path) -> Result<()> {
     // Do PNG things
     let file = File::create(out_path)
         .with_context(|| format!("failed to open output path: {:?}", out_path))?;
     let writer = BufWriter::new(file);
-    let mut encoder = png::Encoder::new(writer, canvas.width, canvas.height);
+    let mut encoder = png::Encoder::new(writer, width, height);
     encoder.set_color(png::ColorType::RGBA);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().context("failed to write header")?;
     writer
-        .write_image_data(&canvas.rgba_bytes()[..])
+        .write_image_data(&data)
         .context("failed to write data")
 }
