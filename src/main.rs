@@ -70,7 +70,8 @@ fn draw(width: u32, height: u32) -> Vec<u8> {
                 let r = (i as f64) / (image_width - 1.0);
                 let g = (j as f64) / (image_height - 1.0);
                 let b = 0.25f64;
-                Pixel::new_from_f64(r, g, b, 1.0)
+                let color = Color(Vec3::new(r, g, b));
+                Pixel::from_color(&color)
             })
         })
         .for_each(|pixel| result.extend_from_slice(&pixel.data));
