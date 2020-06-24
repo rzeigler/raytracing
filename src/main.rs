@@ -54,28 +54,58 @@ fn main() -> Result<()> {
 }
 
 fn run(width: u32, height: u32, out_path: &Path) -> Result<()> {
-    let content = draw(width, height);
+    let content = draw(width, height, &pixel_color(width, height));
     write_png(width, height, &content, out_path)
 }
 
-fn draw(width: u32, height: u32) -> Vec<u8> {
-    let image_width = width as f64;
-    let image_height = height as f64;
+fn draw<F>(width: u32, height: u32, denote: &F) -> Vec<u8>
+where
+    F: Fn(u32, u32) -> Color,
+{
     let size = width as usize * height as usize * 4;
     let mut result = Vec::with_capacity(size);
     (0..height)
-        .rev() // most positive x written first in png format
+        .rev() // most positive y written first in png format
         .flat_map(|j| {
             (0..width).map(move |i| {
-                let r = (i as f64) / (image_width - 1.0);
-                let g = (j as f64) / (image_height - 1.0);
-                let b = 0.25f64;
-                let color = Color(Vec3::new(r, g, b));
+                let color = denote(i, j);
                 Pixel::from_color(&color)
             })
         })
         .for_each(|pixel| result.extend_from_slice(&pixel.data));
     result
+}
+
+fn pixel_color(width: u32, height: u32) -> impl Fn(u32, u32) -> Color {
+    let focal_length = 1.0;
+    let image_width = width as f64;
+    let image_height = height as f64;
+    let aspect_ratio = image_height / image_width;
+    let viewport_height = 2.0;
+    let viewport_width = viewport_height * aspect_ratio;
+    let origin = Point3(Vec3::new(0.0, viewport_height, 0.0));
+    let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
+    let vertical = Vec3::new(0.0, viewport_height, 0.0);
+    let lower_left_corner =
+        origin.0 - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
+
+    move |i, j| {
+        let u = (i as f64) / (image_width - 1.0);
+        let v = (j as f64) / (image_height - 1.0);
+        let ray = Ray::new(
+            origin,
+            lower_left_corner + u * horizontal + v * vertical - origin.0,
+        );
+        ray_color(&ray)
+    }
+}
+
+fn ray_color(ray: &Ray) -> Color {
+    if Sphere::new(Point3::new(0.0, 0.0, -1.0), 0.5).hit_by(ray) {
+        return Color::new(1.0, 0.0, 0.0);
+    }
+    let t = 0.5 * (ray.dir.unit().y + 1.0);
+    ((1.0 - t) * Vec3::new(1.0, 1.0, 1.0) + t * Vec3::new(0.5, 0.7, 1.0)).into()
 }
 
 fn write_png(width: u32, height: u32, data: &Vec<u8>, out_path: &Path) -> Result<()> {

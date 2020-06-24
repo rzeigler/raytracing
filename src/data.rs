@@ -156,5 +156,83 @@ impl Add<Vec3> for f64 {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Point3(pub Vec3);
+
+impl Point3 {
+    pub fn new(x: f64, y: f64, z: f64) -> Point3 {
+        Point3(Vec3::new(x, y, z))
+    }
+}
+
+impl From<Vec3> for Point3 {
+    fn from(vec: Vec3) -> Self {
+        Point3(vec)
+    }
+}
+#[derive(Clone, Copy)]
 pub struct Color(pub Vec3);
+
+impl Color {
+    pub fn new(r: f64, g: f64, b: f64) -> Color {
+        Color(Vec3::new(r, g, b))
+    }
+
+    pub fn r(&self) -> f64 {
+        self.0.x
+    }
+
+    pub fn g(&self) -> f64 {
+        self.0.y
+    }
+
+    pub fn b(&self) -> f64 {
+        self.0.z
+    }
+}
+
+impl From<Vec3> for Color {
+    fn from(vec: Vec3) -> Self {
+        Color(vec)
+    }
+}
+
+pub struct Ray {
+    pub origin: Point3,
+    pub dir: Vec3,
+}
+
+impl Ray {
+    pub fn new(origin: Point3, dir: Vec3) -> Ray {
+        Ray {
+            origin: origin,
+            dir: dir,
+        }
+    }
+}
+
+pub trait Hittable {
+    fn hit_by(&self, ray: &Ray) -> bool;
+}
+
+pub struct Sphere {
+    center: Point3,
+    radius: f64,
+}
+
+impl Sphere {
+    pub fn new(center: Point3, radius: f64) -> Sphere {
+        Sphere { center, radius }
+    }
+}
+
+impl Hittable for Sphere {
+    fn hit_by(&self, ray: &Ray) -> bool {
+        let oc = ray.origin.0 - self.center.0;
+        let a = ray.dir.dot(&ray.dir);
+        let b = 2.0 * oc.dot(&ray.dir);
+        let c = oc.dot(&oc) - self.radius * self.radius;
+        let discriminant = b * b - 4.0 * a * c;
+        discriminant > 0.0
+    }
+}
