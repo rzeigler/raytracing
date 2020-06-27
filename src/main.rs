@@ -154,18 +154,17 @@ mod trace {
         let samples_per_pixel = 100;
         let camera = Camera::new(width, height);
 
-        let mut output_buffer: Vec<u8> = Vec::with_capacity(width as usize * height as usize * 4);
-
-        let mut rows: Vec<Vec<Pixel>> = Vec::with_capacity(height as usize);
+        // Final output of the entire representation
+        let mut rows: Vec<Vec<u8>> = Vec::with_capacity(height as usize);
+        let dist = Uniform::new(0.0f64, 1.0f64);
 
         (0..height)
             .into_par_iter()
             // Invert because png writes from top to bottom
             .rev()
             .map(|j| {
-                let mut pixels: Vec<Pixel> = Vec::with_capacity(width as usize);
+                let mut pixels: Vec<u8> = Vec::with_capacity(width as usize * 4);
                 let mut rng = thread_rng();
-                let dist = Uniform::new(0.0f64, 1.0f64);
                 for i in 0..width {
                     let mut color = Pixel(Vec3::zero());
                     for _ in 0..samples_per_pixel {
@@ -174,17 +173,15 @@ mod trace {
                         let ray = camera.cast_ray(u, v);
                         color += ray_color(&mut rng, &ray, world, MAX_DEPTH);
                     }
-                    pixels.push(color);
+                    pixels.extend_from_slice(&color.as_rgb(samples_per_pixel));
                 }
                 pixels
             })
             .collect_into_vec(&mut rows);
 
+        let mut output_buffer: Vec<u8> = Vec::with_capacity(width as usize * height as usize * 4);
         rows.into_iter()
-            .flat_map(|row| row.into_iter())
-            .map(|p| p.as_rgb(samples_per_pixel))
-            .for_each(|pixel| output_buffer.extend_from_slice(&pixel));
-
+            .for_each(|row| output_buffer.extend_from_slice(row.as_slice()));
         output_buffer
     }
 
