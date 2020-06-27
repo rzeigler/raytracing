@@ -148,32 +148,44 @@ mod trace {
 
     const MAX_DEPTH: u32 = 50;
 
-    pub fn draw<H: Hittable>(width: u32, height: u32, world: &H) -> Vec<u8> {
-        let size = width as usize * height as usize * 4;
+    pub fn draw<H: Hittable + Sync>(width: u32, height: u32, world: &H) -> Vec<u8> {
         let image_width = f64::from(width);
         let image_height = f64::from(height);
         let samples_per_pixel = 100;
         let camera = Camera::new(width, height);
-        let mut result = Vec::with_capacity(size);
+
+        let mut output_buffer: Vec<u8> = Vec::with_capacity(width as usize * height as usize * 4);
+
+        let mut rows: Vec<Vec<Pixel>> = Vec::with_capacity(height as usize);
+
         (0..height)
-            .rev() // most positive y written first in png format
-            .flat_map(|j| {
-                let cam = camera.clone();
-                (0..width).map(move |i| {
-                    let mut rng = thread_rng();
-                    let dist = Uniform::new(0.0f64, 1.0f64);
+            .into_par_iter()
+            // Invert because png writes from top to bottom
+            .rev()
+            .map(|j| {
+                let mut pixels: Vec<Pixel> = Vec::with_capacity(width as usize);
+                let mut rng = thread_rng();
+                let dist = Uniform::new(0.0f64, 1.0f64);
+                for i in 0..width {
                     let mut color = Pixel(Vec3::zero());
                     for _ in 0..samples_per_pixel {
                         let u = (f64::from(i) + rng.sample(dist)) / (image_width - 1.0);
                         let v = (f64::from(j) + rng.sample(dist)) / (image_height - 1.0);
-                        let ray = cam.cast_ray(u, v);
+                        let ray = camera.cast_ray(u, v);
                         color += ray_color(&mut rng, &ray, world, MAX_DEPTH);
                     }
-                    color.as_rgb(samples_per_pixel)
-                })
+                    pixels.push(color);
+                }
+                pixels
             })
-            .for_each(|pixel| result.extend_from_slice(&pixel));
-        result
+            .collect_into_vec(&mut rows);
+
+        rows.into_iter()
+            .flat_map(|row| row.into_iter())
+            .map(|p| p.as_rgb(samples_per_pixel))
+            .for_each(|pixel| output_buffer.extend_from_slice(&pixel));
+
+        output_buffer
     }
 
     fn ray_color<H: Hittable, R: Rng>(rng: &mut R, ray: &Ray, world: &H, depth: u32) -> Pixel {
