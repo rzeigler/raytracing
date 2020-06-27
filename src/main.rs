@@ -109,31 +109,6 @@ mod trace {
         v.min(upper).max(lower)
     }
 
-    struct RngUnitVecBuilder<R> {
-        rng: R,
-        a_dist: Uniform<f64>,
-        z_dist: Uniform<f64>,
-    }
-
-    impl<R: Rng> RngUnitVecBuilder<R> {
-        pub fn new(rng: R) -> RngUnitVecBuilder<R> {
-            let a_dist = Uniform::new(0f64, 2.0 * std::f64::consts::PI);
-            let z_dist = Uniform::new(-1.0f64, 1.0f64);
-            RngUnitVecBuilder {
-                rng,
-                a_dist,
-                z_dist,
-            }
-        }
-
-        pub fn random_vec3(&mut self) -> Vec3 {
-            let a = self.rng.sample(self.a_dist);
-            let z = self.rng.sample(self.z_dist);
-            let r = (1.0 - z * z).sqrt();
-            Vec3::new(r * a.cos(), r * a.sin(), z)
-        }
-    }
-
     #[derive(Clone)]
     struct Camera {
         origin: Vec3,
@@ -188,12 +163,11 @@ mod trace {
                     let mut rng = thread_rng();
                     let dist = Uniform::new(0.0f64, 1.0f64);
                     let mut color = Pixel(Vec3::zero());
-                    let mut random_units = RngUnitVecBuilder::new(thread_rng());
                     for _ in 0..samples_per_pixel {
                         let u = (f64::from(i) + rng.sample(dist)) / (image_width - 1.0);
                         let v = (f64::from(j) + rng.sample(dist)) / (image_height - 1.0);
                         let ray = cam.cast_ray(u, v);
-                        color += ray_color(&mut random_units, &ray, world, MAX_DEPTH);
+                        color += ray_color(&mut rng, &ray, world, MAX_DEPTH);
                     }
                     color.as_rgb(samples_per_pixel)
                 })
@@ -202,17 +176,12 @@ mod trace {
         result
     }
 
-    fn ray_color<H: Hittable, R: Rng>(
-        rng: &mut RngUnitVecBuilder<R>,
-        ray: &Ray,
-        world: &H,
-        depth: u32,
-    ) -> Pixel {
+    fn ray_color<H: Hittable, R: Rng>(rng: &mut R, ray: &Ray, world: &H, depth: u32) -> Pixel {
         if depth == 0 {
             return Pixel(Vec3::zero());
         }
         if let Some(hit) = world.hit(ray, 0.001, f64::INFINITY) {
-            let target = hit.point + hit.normal + rng.random_vec3();
+            let target = hit.point + hit.normal + random_in_hemisphere(rng, &hit.normal);
             return Pixel(
                 0.5 * ray_color(
                     rng,
@@ -226,5 +195,14 @@ mod trace {
         let unit = ray.direction.unit();
         let t = 0.5 * (unit.y() + 1.0);
         Pixel((1.0 - t) * Vec3::new(1.0, 1.0, 1.0) + t * Vec3::new(0.5, 0.7, 1.0))
+    }
+
+    pub fn random_in_hemisphere<R: Rng>(rng: &mut R, normal: &Vec3) -> Vec3 {
+        let in_unit_sphere = Vec3::new_raw(UnitBall.sample(rng));
+        if in_unit_sphere.dot(normal) > 0.0 {
+            in_unit_sphere
+        } else {
+            in_unit_sphere.flip()
+        }
     }
 }
