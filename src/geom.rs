@@ -194,6 +194,16 @@ impl Ray {
     }
 }
 
+pub struct Hit {
+    pub point: Vec3,
+    pub normal: Vec3,
+    pub t: f64,
+}
+
+pub trait Hittable {
+    fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit>;
+}
+
 pub struct Sphere {
     center: Vec3,
     radius: f64,
@@ -203,8 +213,10 @@ impl Sphere {
     pub fn new(center: Vec3, radius: f64) -> Sphere {
         Sphere { center, radius }
     }
+}
 
-    pub fn hit(&self, ray: &Ray) -> Option<f64> {
+impl Hittable for Sphere {
+    fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit> {
         let oc = ray.origin - self.center;
         let a = ray.direction.length_squared();
         let half_b = oc.dot(&ray.direction);
@@ -213,7 +225,20 @@ impl Sphere {
         if discriminant < 0.0 {
             None
         } else {
-            Some((-half_b - discriminant.sqrt()) / a)
+            let root = discriminant.sqrt();
+            let t = (-half_b - root) / a;
+            if t < max_t && t > min_t {
+                let point = ray.at(t);
+                let normal = (point - self.center) / self.radius;
+                return Some(Hit { point, normal, t });
+            }
+            let t = (-half_b + root) / a;
+            if t < max_t && t > min_t {
+                let point = ray.at(t);
+                let normal = (point - self.center) / self.radius;
+                return Some(Hit { point, normal, t });
+            }
+            None
         }
     }
 }
