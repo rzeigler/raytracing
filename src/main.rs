@@ -50,10 +50,25 @@ fn main() -> Result<()> {
         IMAGE_HEIGHT
     };
     let out_path = Path::new(matches.value_of("out").unwrap());
-    let hittables: Vec<Box<dyn Hittable + Send + Sync + 'static>> = vec![
-        Box::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5)),
-        Box::new(Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0)),
-    ];
+
+    let c1 = Lambertian::new(Vec3::new(0.7, 0.3, 0.3));
+    let o1 = Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, &c1);
+
+    let c2 = Lambertian::new(Vec3::new(0.8, 0.8, 0.0));
+    let o2 = Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0, &c2);
+
+    let c3 = Metal::new(Vec3::new(0.8, 0.6, 0.2));
+    let o3 = Sphere::new(Vec3::new(1.0, 0.0, -1.0), 0.5, &c3);
+
+    let c4 = Metal::new(Vec3::new(0.8, 0.8, 0.8));
+    let o4 = Sphere::new(Vec3::new(-1.0, 0.0, -1.0), 0.5, &c4);
+
+    let hittables: Vec<&(dyn Hittable + Send + Sync)> = vec![&o1, &o2, &o3, &o4];
+
+    // let hittables: Vec<Box<dyn Hittable + Send + Sync + 'static>> = vec![
+    //     Box::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5), &color1),
+    //     Box::new(Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0)),
+    // ];
     let world = World::new(hittables);
     let content = draw::draw(width, height, &world);
     write_png(width, height, &content, out_path)

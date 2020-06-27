@@ -1,3 +1,6 @@
+use rand::distributions::Distribution;
+use rand::rngs::ThreadRng;
+use rand_distr::UnitBall;
 use std::ops::*;
 
 #[derive(Clone, Copy)]
@@ -202,15 +205,81 @@ impl Ray {
     }
 }
 
-pub struct Hit {
+pub struct Scatter {
+    pub scattered: Ray,
+    pub attenuation: Vec3, // a color
+}
+
+pub trait Material: Sync {
+    // We hardcode the dep on ThreadRng...
+    fn scatter(&self, ray: &Ray, hit: &Hit, rng: &mut ThreadRng) -> Option<Scatter>;
+}
+
+pub struct Lambertian {
+    albedo: Vec3,
+}
+
+impl Lambertian {
+    pub fn new(albedo: Vec3) -> Lambertian {
+        Lambertian { albedo }
+    }
+}
+
+impl Material for Lambertian {
+    fn scatter(&self, ray: &Ray, hit: &Hit, rng: &mut ThreadRng) -> Option<Scatter> {
+        let scatter_direction = hit.normal + Vec3::new_raw(UnitBall.sample(rng));
+        Some(Scatter {
+            scattered: Ray::new(hit.point, scatter_direction),
+            attenuation: self.albedo,
+        })
+    }
+}
+
+pub struct Metal {
+    albedo: Vec3,
+}
+
+impl Metal {
+    pub fn new(albedo: Vec3) -> Metal {
+        Metal { albedo }
+    }
+}
+
+fn reflect(v: &Vec3, n: &Vec3) -> Vec3 {
+    *v - 2.0 * v.dot(n) * *n
+}
+
+impl Material for Metal {
+    fn scatter(&self, ray: &Ray, hit: &Hit, rng: &mut ThreadRng) -> Option<Scatter> {
+        let reflected = reflect(&ray.direction.unit(), &hit.normal);
+        let scattered = Ray::new(hit.point, reflected);
+        if scattered.direction.dot(&hit.normal) > 0.0 {
+            Some(Scatter {
+                scattered,
+                attenuation: self.albedo,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+pub struct Hit<'ma> {
     pub point: Vec3,
     pub normal: Vec3,
     pub t: f64,
     pub front_face: bool,
+    pub material: &'ma dyn Material,
 }
 
-impl Hit {
-    pub fn new(point: Vec3, outward_normal: Vec3, t: f64, ray: &Ray) -> Hit {
+impl<'ma> Hit<'ma> {
+    pub fn new(
+        point: Vec3,
+        outward_normal: Vec3,
+        t: f64,
+        ray: &Ray,
+        material: &'ma dyn Material,
+    ) -> Hit<'ma> {
         let front_face = ray.direction.dot(&outward_normal) < 0.0;
         let normal = if front_face {
             outward_normal
@@ -222,6 +291,7 @@ impl Hit {
             normal,
             t,
             front_face,
+            material,
         }
     }
 }
@@ -230,18 +300,23 @@ pub trait Hittable {
     fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit>;
 }
 
-pub struct Sphere {
+pub struct Sphere<'ma> {
     center: Vec3,
     radius: f64,
+    material: &'ma dyn Material,
 }
 
-impl Sphere {
-    pub fn new(center: Vec3, radius: f64) -> Sphere {
-        Sphere { center, radius }
+impl<'ma> Sphere<'ma> {
+    pub fn new(center: Vec3, radius: f64, material: &'ma dyn Material) -> Sphere {
+        Sphere {
+            center,
+            radius,
+            material,
+        }
     }
 }
 
-impl Hittable for Sphere {
+impl<'ma> Hittable for Sphere<'ma> {
     fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit> {
         let oc = ray.origin - self.center;
         let a = ray.direction.length_squared();
@@ -256,28 +331,28 @@ impl Hittable for Sphere {
             if t < max_t && t > min_t {
                 let point = ray.at(t);
                 let outward_normal = (point - self.center) / self.radius;
-                return Some(Hit::new(point, outward_normal, t, ray));
+                return Some(Hit::new(point, outward_normal, t, ray, self.material));
             }
             let t = (-half_b + root) / a;
             if t < max_t && t > min_t {
                 let point = ray.at(t);
                 let outward_normal = (point - self.center) / self.radius;
-                return Some(Hit::new(point, outward_normal, t, ray));
+                return Some(Hit::new(point, outward_normal, t, ray, self.material));
             }
             None
         }
     }
 }
 
-pub struct World(Vec<Box<dyn Hittable + Send + Sync>>);
+pub struct World<'a>(Vec<&'a (dyn Hittable + Send + Sync)>);
 
-impl World {
-    pub fn new(v: Vec<Box<dyn Hittable + Send + Sync>>) -> World {
+impl<'a> World<'a> {
+    pub fn new(v: Vec<&'a (dyn Hittable + Send + Sync)>) -> World {
         World(v)
     }
 }
 
-impl Hittable for World {
+impl<'a> Hittable for World<'a> {
     fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit> {
         let mut current_hit: Option<Hit> = None;
         for hittable in self.0.iter() {

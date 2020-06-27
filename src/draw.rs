@@ -1,5 +1,6 @@
 use super::geom::*;
 use rand::distributions::Uniform;
+use rand::rngs::ThreadRng;
 use rand::*;
 use rand_distr::{Distribution, UnitBall};
 use rayon::prelude::*;
@@ -107,21 +108,17 @@ pub fn draw<H: Hittable + Sync>(width: u32, height: u32, world: &H) -> Vec<u8> {
     output_buffer
 }
 
-fn ray_color<H: Hittable, R: Rng>(rng: &mut R, ray: &Ray, world: &H, depth: u32) -> Pixel {
+fn ray_color<H: Hittable>(rng: &mut ThreadRng, ray: &Ray, world: &H, depth: u32) -> Pixel {
     if depth == 0 {
         return Pixel(Vec3::zero());
     }
     if let Some(hit) = world.hit(ray, 0.001, f64::INFINITY) {
-        let target = hit.point + hit.normal + random_in_hemisphere(rng, &hit.normal);
-        return Pixel(
-            0.5 * ray_color(
-                rng,
-                &Ray::new(hit.point, target - hit.point),
-                world,
-                depth - 1,
-            )
-            .0,
-        );
+        if let Some(scatter) = hit.material.scatter(ray, &hit, rng) {
+            return Pixel(
+                scatter.attenuation * ray_color(rng, &scatter.scattered, world, depth - 1).0,
+            );
+        }
+        return Pixel(Vec3::zero());
     }
     let unit = ray.direction.unit();
     let t = 0.5 * (unit.y() + 1.0);
