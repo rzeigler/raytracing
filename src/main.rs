@@ -79,6 +79,7 @@ mod trace {
     use super::geom::*;
     use rand::distributions::Uniform;
     use rand::*;
+    use rand_distr::{Distribution, UnitBall};
     use rayon::prelude::*;
     use std::ops::AddAssign;
     struct Pixel(Vec3);
@@ -86,9 +87,14 @@ mod trace {
     impl Pixel {
         fn as_rgb(&self, samples: u32) -> [u8; 4] {
             let scale = 1.0 / f64::from(samples);
-            let ir = (clamp(self.0.x() * scale, 0.0, 1.0) * 255.0) as u8;
-            let ig = (clamp(self.0.y() * scale, 0.0, 1.0) * 255.0) as u8;
-            let ib = (clamp(self.0.z() * scale, 0.0, 1.0) * 255.0) as u8;
+
+            let r = (self.0.x() * scale).sqrt();
+            let g = (self.0.y() * scale).sqrt();
+            let b = (self.0.z() * scale).sqrt();
+
+            let ir = (clamp(r, 0.0, 1.0) * 255.0) as u8;
+            let ig = (clamp(g, 0.0, 1.0) * 255.0) as u8;
+            let ib = (clamp(b, 0.0, 1.0) * 255.0) as u8;
             [ir, ig, ib, 255]
         }
     }
@@ -101,6 +107,31 @@ mod trace {
 
     fn clamp(v: f64, lower: f64, upper: f64) -> f64 {
         v.min(upper).max(lower)
+    }
+
+    struct RngUnitVecBuilder<R> {
+        rng: R,
+        a_dist: Uniform<f64>,
+        z_dist: Uniform<f64>,
+    }
+
+    impl<R: Rng> RngUnitVecBuilder<R> {
+        pub fn new(rng: R) -> RngUnitVecBuilder<R> {
+            let a_dist = Uniform::new(0f64, 2.0 * std::f64::consts::PI);
+            let z_dist = Uniform::new(-1.0f64, 1.0f64);
+            RngUnitVecBuilder {
+                rng,
+                a_dist,
+                z_dist,
+            }
+        }
+
+        pub fn random_vec3(&mut self) -> Vec3 {
+            let a = self.rng.sample(self.a_dist);
+            let z = self.rng.sample(self.z_dist);
+            let r = (1.0 - z * z).sqrt();
+            Vec3::new(r * a.cos(), r * a.sin(), z)
+        }
     }
 
     #[derive(Clone)]
@@ -156,13 +187,13 @@ mod trace {
                 (0..width).map(move |i| {
                     let mut rng = thread_rng();
                     let dist = Uniform::new(0.0f64, 1.0f64);
-                    let sphere_dist = Uniform::new(-1.0f64, 1.0f64);
                     let mut color = Pixel(Vec3::zero());
+                    let mut random_units = RngUnitVecBuilder::new(thread_rng());
                     for _ in 0..samples_per_pixel {
                         let u = (f64::from(i) + rng.sample(dist)) / (image_width - 1.0);
                         let v = (f64::from(j) + rng.sample(dist)) / (image_height - 1.0);
                         let ray = cam.cast_ray(u, v);
-                        color += ray_color(&mut rng, &sphere_dist, &ray, world, MAX_DEPTH);
+                        color += ray_color(&mut random_units, &ray, world, MAX_DEPTH);
                     }
                     color.as_rgb(samples_per_pixel)
                 })
@@ -172,8 +203,7 @@ mod trace {
     }
 
     fn ray_color<H: Hittable, R: Rng>(
-        rng: &mut R,
-        sphere_dist: &Uniform<f64>,
+        rng: &mut RngUnitVecBuilder<R>,
         ray: &Ray,
         world: &H,
         depth: u32,
@@ -181,12 +211,11 @@ mod trace {
         if depth == 0 {
             return Pixel(Vec3::zero());
         }
-        if let Some(hit) = world.hit(ray, 0.0, f64::INFINITY) {
-            let target = hit.point + hit.normal + random_in_unit_sphere(rng, sphere_dist);
+        if let Some(hit) = world.hit(ray, 0.001, f64::INFINITY) {
+            let target = hit.point + hit.normal + rng.random_vec3();
             return Pixel(
                 0.5 * ray_color(
                     rng,
-                    sphere_dist,
                     &Ray::new(hit.point, target - hit.point),
                     world,
                     depth - 1,
@@ -197,14 +226,5 @@ mod trace {
         let unit = ray.direction.unit();
         let t = 0.5 * (unit.y() + 1.0);
         Pixel((1.0 - t) * Vec3::new(1.0, 1.0, 1.0) + t * Vec3::new(0.5, 0.7, 1.0))
-    }
-
-    fn random_in_unit_sphere<R: Rng>(rng: &mut R, dist: &Uniform<f64>) -> Vec3 {
-        loop {
-            let p = Vec3::new(rng.sample(dist), rng.sample(dist), rng.sample(dist));
-            if p.length_squared() < 1.0 {
-                return p;
-            }
-        }
     }
 }

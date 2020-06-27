@@ -16,6 +16,10 @@ impl Vec3 {
         Vec3 { data: [x, y, z] }
     }
 
+    pub fn new_raw(data: [f64; 3]) -> Vec3 {
+        Vec3 { data }
+    }
+
     pub fn length_squared(&self) -> f64 {
         self.data.iter().map(|x| x.powi(2)).sum()
     }
