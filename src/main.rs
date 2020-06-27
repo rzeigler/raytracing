@@ -1,11 +1,15 @@
 #![warn(clippy::all)]
 use anyhow::{Context, Result};
 use clap::{value_t, App, Arg};
+use rand::distributions::Uniform;
+use rand::{thread_rng, Rng};
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
+use std::sync::*;
 
 mod geom;
+use geom::*;
 
 const IMAGE_WIDTH: u32 = 1600;
 const IMAGE_HEIGHT: u32 = 800;
@@ -48,7 +52,12 @@ fn main() -> Result<()> {
         IMAGE_HEIGHT
     };
     let out_path = Path::new(matches.value_of("out").unwrap());
-    let content = trace::draw(width, height);
+    let hittables: Vec<Box<dyn Hittable + Send + Sync + 'static>> = vec![
+        Box::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5)),
+        Box::new(Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0)),
+    ];
+    let world = World::new(hittables);
+    let content = trace::draw(width, height, &world);
     write_png(width, height, &content, out_path)
 }
 
@@ -68,58 +77,134 @@ fn write_png(width: u32, height: u32, data: &Vec<u8>, out_path: &Path) -> Result
 
 mod trace {
     use super::geom::*;
-
+    use rand::distributions::Uniform;
+    use rand::*;
+    use rayon::prelude::*;
+    use std::ops::AddAssign;
     struct Pixel(Vec3);
 
     impl Pixel {
-        fn as_rgb(&self) -> [u8; 4] {
-            let ir = (self.0.x() * 255.0) as u8;
-            let ig = (self.0.y() * 255.0) as u8;
-            let ib = (self.0.z() * 255.0) as u8;
+        fn as_rgb(&self, samples: u32) -> [u8; 4] {
+            let scale = 1.0 / f64::from(samples);
+            let ir = (clamp(self.0.x() * scale, 0.0, 1.0) * 255.0) as u8;
+            let ig = (clamp(self.0.y() * scale, 0.0, 1.0) * 255.0) as u8;
+            let ib = (clamp(self.0.z() * scale, 0.0, 1.0) * 255.0) as u8;
             [ir, ig, ib, 255]
         }
     }
 
-    pub fn draw(width: u32, height: u32) -> Vec<u8> {
+    impl AddAssign for Pixel {
+        fn add_assign(&mut self, rhs: Pixel) {
+            self.0 += rhs.0;
+        }
+    }
+
+    fn clamp(v: f64, lower: f64, upper: f64) -> f64 {
+        v.min(upper).max(lower)
+    }
+
+    #[derive(Clone)]
+    struct Camera {
+        origin: Vec3,
+        lower_left_corner: Vec3,
+        horizontal: Vec3,
+        vertical: Vec3,
+    }
+
+    impl Camera {
+        pub fn new(width: u32, height: u32) -> Camera {
+            let aspect_ratio = f64::from(width) / f64::from(height);
+            let viewport_height = 2.0;
+            let viewport_width = viewport_height * aspect_ratio;
+            let focal_length = 1.0;
+
+            let origin = Vec3::zero();
+            let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
+            let vertical = Vec3::new(0.0, viewport_height, 0.0);
+            let lower_left_corner =
+                origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
+
+            Camera {
+                origin,
+                lower_left_corner,
+                horizontal,
+                vertical,
+            }
+        }
+
+        pub fn cast_ray(&self, u: f64, v: f64) -> Ray {
+            Ray::new(
+                self.origin,
+                self.lower_left_corner + u * self.horizontal + v * self.vertical - self.origin,
+            )
+        }
+    }
+
+    const MAX_DEPTH: u32 = 50;
+
+    pub fn draw<H: Hittable>(width: u32, height: u32, world: &H) -> Vec<u8> {
         let size = width as usize * height as usize * 4;
         let image_width = f64::from(width);
         let image_height = f64::from(height);
-        let aspect_ratio = image_width / image_height;
-        let viewport_height = 2.0;
-        let viewport_width = viewport_height * aspect_ratio;
-        let focal_length = 1.0;
-
-        let origin = Vec3::zero();
-        let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
-        let vertical = Vec3::new(0.0, viewport_height, 0.0);
-        let lower_left_corner =
-            origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
-
+        let samples_per_pixel = 100;
+        let camera = Camera::new(width, height);
         let mut result = Vec::with_capacity(size);
         (0..height)
             .rev() // most positive y written first in png format
             .flat_map(|j| {
+                let cam = camera.clone();
                 (0..width).map(move |i| {
-                    let u = f64::from(i) / (image_width - 1.0);
-                    let v = f64::from(j) / (image_height - 1.0);
-                    let ray = Ray::new(
-                        origin,
-                        lower_left_corner + u * horizontal + v * vertical - origin,
-                    );
-                    ray_color(&ray).as_rgb()
+                    let mut rng = thread_rng();
+                    let dist = Uniform::new(0.0f64, 1.0f64);
+                    let sphere_dist = Uniform::new(-1.0f64, 1.0f64);
+                    let mut color = Pixel(Vec3::zero());
+                    for _ in 0..samples_per_pixel {
+                        let u = (f64::from(i) + rng.sample(dist)) / (image_width - 1.0);
+                        let v = (f64::from(j) + rng.sample(dist)) / (image_height - 1.0);
+                        let ray = cam.cast_ray(u, v);
+                        color += ray_color(&mut rng, &sphere_dist, &ray, world, MAX_DEPTH);
+                    }
+                    color.as_rgb(samples_per_pixel)
                 })
             })
             .for_each(|pixel| result.extend_from_slice(&pixel));
         result
     }
 
-    fn ray_color(ray: &Ray) -> Pixel {
-        if let Some(hit) = Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5).hit(ray, 0.0, f64::INFINITY)
-        {
-            return Pixel(0.5 * (hit.normal.unit() + 1.0));
+    fn ray_color<H: Hittable, R: Rng>(
+        rng: &mut R,
+        sphere_dist: &Uniform<f64>,
+        ray: &Ray,
+        world: &H,
+        depth: u32,
+    ) -> Pixel {
+        if depth == 0 {
+            return Pixel(Vec3::zero());
+        }
+        if let Some(hit) = world.hit(ray, 0.0, f64::INFINITY) {
+            let target = hit.point + hit.normal + random_in_unit_sphere(rng, sphere_dist);
+            return Pixel(
+                0.5 * ray_color(
+                    rng,
+                    sphere_dist,
+                    &Ray::new(hit.point, target - hit.point),
+                    world,
+                    depth - 1,
+                )
+                .0,
+            );
         }
         let unit = ray.direction.unit();
         let t = 0.5 * (unit.y() + 1.0);
         Pixel((1.0 - t) * Vec3::new(1.0, 1.0, 1.0) + t * Vec3::new(0.5, 0.7, 1.0))
+    }
+
+    fn random_in_unit_sphere<R: Rng>(rng: &mut R, dist: &Uniform<f64>) -> Vec3 {
+        loop {
+            let p = Vec3::new(rng.sample(dist), rng.sample(dist), rng.sample(dist));
+            if p.length_squared() < 1.0 {
+                return p;
+            }
+        }
     }
 }

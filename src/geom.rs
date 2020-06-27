@@ -61,6 +61,10 @@ impl Vec3 {
     pub fn unit(&self) -> Vec3 {
         *self / self.length()
     }
+
+    pub fn flip(&self) -> Vec3 {
+        Vec3::new(-self.x(), -self.y(), -self.z())
+    }
 }
 
 impl AddAssign for Vec3 {
@@ -198,6 +202,24 @@ pub struct Hit {
     pub point: Vec3,
     pub normal: Vec3,
     pub t: f64,
+    pub front_face: bool,
+}
+
+impl Hit {
+    pub fn new(point: Vec3, outward_normal: Vec3, t: f64, ray: &Ray) -> Hit {
+        let front_face = ray.direction.dot(&outward_normal) < 0.0;
+        let normal = if front_face {
+            outward_normal
+        } else {
+            outward_normal.flip()
+        };
+        Hit {
+            point,
+            normal,
+            t,
+            front_face,
+        }
+    }
 }
 
 pub trait Hittable {
@@ -229,16 +251,43 @@ impl Hittable for Sphere {
             let t = (-half_b - root) / a;
             if t < max_t && t > min_t {
                 let point = ray.at(t);
-                let normal = (point - self.center) / self.radius;
-                return Some(Hit { point, normal, t });
+                let outward_normal = (point - self.center) / self.radius;
+                return Some(Hit::new(point, outward_normal, t, ray));
             }
             let t = (-half_b + root) / a;
             if t < max_t && t > min_t {
                 let point = ray.at(t);
-                let normal = (point - self.center) / self.radius;
-                return Some(Hit { point, normal, t });
+                let outward_normal = (point - self.center) / self.radius;
+                return Some(Hit::new(point, outward_normal, t, ray));
             }
             None
         }
+    }
+}
+
+pub struct World(Vec<Box<dyn Hittable + Send + Sync>>);
+
+impl World {
+    pub fn new(v: Vec<Box<dyn Hittable + Send + Sync>>) -> World {
+        World(v)
+    }
+}
+
+impl Hittable for World {
+    fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit> {
+        let mut current_hit: Option<Hit> = None;
+        for hittable in self.0.iter() {
+            let _max_t = current_hit.as_ref().map(|h| h.t).unwrap_or(max_t);
+            current_hit = hittable.hit(ray, min_t, _max_t).or(current_hit);
+        }
+        return current_hit;
+    }
+}
+
+use std::sync::Arc;
+
+impl<H: Hittable> Hittable for Arc<H> {
+    fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit> {
+        self.hit(ray, min_t, max_t)
     }
 }
