@@ -114,8 +114,9 @@ mod trace {
     }
 
     fn ray_color(ray: &Ray) -> Pixel {
-        if Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5).hit(ray) {
-            return Pixel(Vec3::new(1.0, 0.0, 0.0));
+        if let Some(t) = Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5).hit(ray) {
+            let normal = (ray.at(t) - Vec3::new(0.0, 0.0, -1.0)).unit();
+            return Pixel(0.5 * (normal + 1.0));
         }
         let unit = ray.direction.unit();
         let t = 0.5 * (unit.y() + 1.0);

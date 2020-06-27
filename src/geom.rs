@@ -71,6 +71,14 @@ impl AddAssign for Vec3 {
     }
 }
 
+impl AddAssign<f64> for Vec3 {
+    fn add_assign(&mut self, rhs: f64) {
+        for l in self.data.iter_mut() {
+            *l += rhs;
+        }
+    }
+}
+
 impl SubAssign for Vec3 {
     fn sub_assign(&mut self, rhs: Vec3) {
         for (l, r) in self.data.iter_mut().zip(rhs.data.iter()) {
@@ -155,6 +163,15 @@ impl Div<f64> for Vec3 {
     }
 }
 
+impl Add<f64> for Vec3 {
+    type Output = Vec3;
+    fn add(self, rhs: f64) -> Self::Output {
+        let mut dup = self;
+        dup += rhs;
+        dup
+    }
+}
+
 pub struct Ray {
     pub origin: Vec3,
     pub direction: Vec3,
@@ -187,12 +204,16 @@ impl Sphere {
         Sphere { center, radius }
     }
 
-    pub fn hit(&self, ray: &Ray) -> bool {
+    pub fn hit(&self, ray: &Ray) -> Option<f64> {
         let oc = ray.origin - self.center;
-        let a = ray.direction.dot(&ray.direction);
-        let b = 2.0 * oc.dot(&ray.direction);
-        let c = oc.dot(&oc) - self.radius * self.radius;
-        let discriminant = b * b - 4.0 * a * c;
-        discriminant > 0.0
+        let a = ray.direction.length_squared();
+        let half_b = oc.dot(&ray.direction);
+        let c = oc.length_squared() - self.radius * self.radius;
+        let discriminant = half_b * half_b - a * c;
+        if discriminant < 0.0 {
+            None
+        } else {
+            Some((-half_b - discriminant.sqrt()) / a)
+        }
     }
 }
