@@ -287,11 +287,3 @@ impl Hittable for World {
         return current_hit;
     }
 }
-
-use std::sync::Arc;
-
-impl<H: Hittable> Hittable for Arc<H> {
-    fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit> {
-        self.hit(ray, min_t, max_t)
-    }
-}
