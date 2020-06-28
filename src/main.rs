@@ -140,7 +140,7 @@ fn main() -> Result<()> {
     material_vec.push(Box::new(Lambertian::new(Vec3::new(0.4, 0.2, 0.1))));
     sphere_descr.push((Vec3::new(-4.0, 1.0, 0.0), 1.0));
 
-    material_vec.push(Box::new(Metal::new(Vec3::new(0.7, 0., 0.5), 0.0)));
+    material_vec.push(Box::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)));
     sphere_descr.push((Vec3::new(4.0, 1.0, 0.0), 1.0));
 
     let material_vec = material_vec;
