@@ -2,7 +2,7 @@ use super::geom::*;
 use rand::distributions::Uniform;
 use rand::rngs::ThreadRng;
 use rand::*;
-use rand_distr::{Distribution, UnitBall};
+use rand_distr::{Distribution, UnitBall, UnitDisc};
 use rayon::prelude::*;
 use std::ops::AddAssign;
 struct Pixel(Vec3);
@@ -38,6 +38,10 @@ struct Camera {
     lower_left_corner: Vec3,
     horizontal: Vec3,
     vertical: Vec3,
+    u: Vec3,
+    v: Vec3,
+    w: Vec3,
+    lens_radius: f64,
 }
 
 fn degrees_to_radians(degrees: f64) -> f64 {
@@ -45,7 +49,15 @@ fn degrees_to_radians(degrees: f64) -> f64 {
 }
 
 impl Camera {
-    pub fn new(lookfrom: Vec3, lookat: Vec3, vup: Vec3, vfov: f64, aspect_ratio: f64) -> Camera {
+    pub fn new(
+        lookfrom: Vec3,
+        lookat: Vec3,
+        vup: Vec3,
+        vfov: f64,
+        aspect_ratio: f64,
+        aperture: f64,
+        focus_dist: f64,
+    ) -> Camera {
         let theta = degrees_to_radians(vfov);
         let h = (theta / 2.0).tan();
         let viewport_height = 2.0 * h;
@@ -56,22 +68,29 @@ impl Camera {
         let v = w.cross(&u);
 
         let origin = lookfrom;
-        let horizontal = viewport_width * u;
-        let vertical = viewport_height * v;
-        let lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 - w;
-
+        let horizontal = focus_dist * viewport_width * u;
+        let vertical = focus_dist * viewport_height * v;
+        let lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 - focus_dist * w;
+        let lens_radius = aperture / 2.0;
         Camera {
             origin,
             lower_left_corner,
             horizontal,
             vertical,
+            u,
+            v,
+            w,
+            lens_radius,
         }
     }
 
-    pub fn cast_ray(&self, u: f64, v: f64) -> Ray {
+    pub fn cast_ray(&self, rng: &mut ThreadRng, s: f64, t: f64) -> Ray {
+        let [x, y] = UnitDisc.sample(rng);
+        let rd = self.lens_radius * Vec3::new(x, y, 0.0);
+        let offset = self.u * rd.x() + self.v * rd.y();
         Ray::new(
-            self.origin,
-            self.lower_left_corner + u * self.horizontal + v * self.vertical - self.origin,
+            self.origin + offset,
+            self.lower_left_corner + s * self.horizontal + t * self.vertical - self.origin - offset,
         )
     }
 }
@@ -82,13 +101,21 @@ const MAX_DEPTH: u32 = 50;
 pub fn draw<H: Hittable + Sync>(width: u32, height: u32, world: &H) -> Vec<u8> {
     let image_width = f64::from(width);
     let image_height = f64::from(height);
+    let aspect_ratio = image_width / image_height;
     let samples_per_pixel = 100;
+    let lookfrom = Vec3::new(3.0, 3.0, 2.0);
+    let lookat = Vec3::new(0.0, 0.0, -1.0);
+    let vup = Vec3::new(0.0, 1.0, 0.0);
+    let dist_to_focus = (lookfrom - lookat).length();
+    let aperture = 2.0;
     let camera = Camera::new(
-        Vec3::new(-2.0, 2.0, 1.0),
-        Vec3::new(0.0, 0.0, -1.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        40.0,
-        image_width / image_height,
+        lookfrom,
+        lookat,
+        vup,
+        20.0,
+        aspect_ratio,
+        aperture,
+        dist_to_focus,
     );
 
     // Final output of the entire representation
@@ -107,7 +134,7 @@ pub fn draw<H: Hittable + Sync>(width: u32, height: u32, world: &H) -> Vec<u8> {
                 for _ in 0..samples_per_pixel {
                     let u = (f64::from(i) + rng.sample(dist)) / (image_width - 1.0);
                     let v = (f64::from(j) + rng.sample(dist)) / (image_height - 1.0);
-                    let ray = camera.cast_ray(u, v);
+                    let ray = camera.cast_ray(&mut rng, u, v);
                     color += ray_color(&mut rng, &ray, world, MAX_DEPTH);
                 }
                 pixels.extend_from_slice(&color.as_rgb(samples_per_pixel));
