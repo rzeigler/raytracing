@@ -57,10 +57,10 @@ fn main() -> Result<()> {
     let c2 = Lambertian::new(Vec3::new(0.8, 0.8, 0.0));
     let o2 = Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0, &c2);
 
-    let c3 = Metal::new(Vec3::new(0.8, 0.6, 0.2));
+    let c3 = Metal::new(Vec3::new(0.8, 0.6, 0.2), 0.3);
     let o3 = Sphere::new(Vec3::new(1.0, 0.0, -1.0), 0.5, &c3);
 
-    let c4 = Metal::new(Vec3::new(0.8, 0.8, 0.8));
+    let c4 = Metal::new(Vec3::new(0.8, 0.8, 0.8), 1.0);
     let o4 = Sphere::new(Vec3::new(-1.0, 0.0, -1.0), 0.5, &c4);
 
     let hittables: Vec<&(dyn Hittable + Send + Sync)> = vec![&o1, &o2, &o3, &o4];
