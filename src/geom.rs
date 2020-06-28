@@ -74,7 +74,7 @@ impl Vec3 {
         Vec3::new(-self.x(), -self.y(), -self.z())
     }
 
-    pub fn random(rng: &mut ThreadRng) -> Vec3 {
+    pub fn random_ball(rng: &mut ThreadRng) -> Vec3 {
         Vec3::new_raw(UnitBall.sample(rng))
     }
 

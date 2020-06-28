@@ -118,7 +118,8 @@ fn main() -> Result<()> {
             let dist_05_1 = Uniform::new(0.5, 1.0);
             if (center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
                 let mat: Box<dyn Material> = if choose_mat < 0.8 {
-                    let albedo = Vec3::random(&mut rng) * Vec3::random(&mut rng);
+                    let albedo = Vec3::random_dist(&mut rng, &random_double)
+                        * Vec3::random_dist(&mut rng, &random_double);
                     Box::new(Lambertian::new(albedo))
                 } else if choose_mat < 0.95 {
                     let albedo = Vec3::random_dist(&mut rng, &dist_05_1);
