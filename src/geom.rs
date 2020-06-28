@@ -73,6 +73,14 @@ impl Vec3 {
     pub fn flip(&self) -> Vec3 {
         Vec3::new(-self.x(), -self.y(), -self.z())
     }
+
+    pub fn random(rng: &mut ThreadRng) -> Vec3 {
+        Vec3::new_raw(UnitBall.sample(rng))
+    }
+
+    pub fn random_dist<D: Distribution<f64>>(rng: &mut ThreadRng, dist: &D) -> Vec3 {
+        Vec3::new(dist.sample(rng), dist.sample(rng), dist.sample(rng))
+    }
 }
 
 impl AddAssign for Vec3 {

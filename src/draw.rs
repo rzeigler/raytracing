@@ -33,7 +33,7 @@ fn clamp(v: f64, lower: f64, upper: f64) -> f64 {
 }
 
 #[derive(Clone)]
-struct Camera {
+pub struct Camera {
     origin: Vec3,
     lower_left_corner: Vec3,
     horizontal: Vec3,
@@ -98,26 +98,10 @@ impl Camera {
 const MAX_DEPTH: u32 = 50;
 
 // TODO: Pass in the camera along with the world
-pub fn draw<H: Hittable + Sync>(width: u32, height: u32, world: &H) -> Vec<u8> {
+pub fn draw<H: Hittable + Sync>(width: u32, height: u32, camera: &Camera, world: &H) -> Vec<u8> {
     let image_width = f64::from(width);
     let image_height = f64::from(height);
-    let aspect_ratio = image_width / image_height;
-    let samples_per_pixel = 100;
-    let lookfrom = Vec3::new(3.0, 3.0, 2.0);
-    let lookat = Vec3::new(0.0, 0.0, -1.0);
-    let vup = Vec3::new(0.0, 1.0, 0.0);
-    let dist_to_focus = (lookfrom - lookat).length();
-    let aperture = 2.0;
-    let camera = Camera::new(
-        lookfrom,
-        lookat,
-        vup,
-        20.0,
-        aspect_ratio,
-        aperture,
-        dist_to_focus,
-    );
-
+    let samples_per_pixel = 100u32;
     // Final output of the entire representation
     let mut rows: Vec<Vec<u8>> = Vec::with_capacity(height as usize);
     let dist = Uniform::new(0.0f64, 1.0f64);
