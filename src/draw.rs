@@ -40,18 +40,25 @@ struct Camera {
     vertical: Vec3,
 }
 
-impl Camera {
-    pub fn new(width: u32, height: u32) -> Camera {
-        let aspect_ratio = f64::from(width) / f64::from(height);
-        let viewport_height = 2.0;
-        let viewport_width = viewport_height * aspect_ratio;
-        let focal_length = 1.0;
+fn degrees_to_radians(degrees: f64) -> f64 {
+    degrees * std::f64::consts::PI / 180.0
+}
 
-        let origin = Vec3::zero();
-        let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
-        let vertical = Vec3::new(0.0, viewport_height, 0.0);
-        let lower_left_corner =
-            origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
+impl Camera {
+    pub fn new(lookfrom: Vec3, lookat: Vec3, vup: Vec3, vfov: f64, aspect_ratio: f64) -> Camera {
+        let theta = degrees_to_radians(vfov);
+        let h = (theta / 2.0).tan();
+        let viewport_height = 2.0 * h;
+        let viewport_width = aspect_ratio * viewport_height;
+
+        let w = (lookfrom - lookat).unit();
+        let u = vup.cross(&w).unit();
+        let v = w.cross(&u);
+
+        let origin = lookfrom;
+        let horizontal = viewport_width * u;
+        let vertical = viewport_height * v;
+        let lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 - w;
 
         Camera {
             origin,
@@ -71,11 +78,18 @@ impl Camera {
 
 const MAX_DEPTH: u32 = 50;
 
+// TODO: Pass in the camera along with the world
 pub fn draw<H: Hittable + Sync>(width: u32, height: u32, world: &H) -> Vec<u8> {
     let image_width = f64::from(width);
     let image_height = f64::from(height);
     let samples_per_pixel = 100;
-    let camera = Camera::new(width, height);
+    let camera = Camera::new(
+        Vec3::new(-2.0, 2.0, 1.0),
+        Vec3::new(0.0, 0.0, -1.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        40.0,
+        image_width / image_height,
+    );
 
     // Final output of the entire representation
     let mut rows: Vec<Vec<u8>> = Vec::with_capacity(height as usize);
