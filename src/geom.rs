@@ -1,5 +1,6 @@
-use rand::distributions::Distribution;
+use rand::distributions::{Distribution, Uniform};
 use rand::rngs::ThreadRng;
+use rand::Rng;
 use rand_distr::UnitBall;
 use std::ops::*;
 
@@ -265,6 +266,59 @@ impl Material for Metal {
             })
         } else {
             None
+        }
+    }
+}
+
+fn refact(uv: &Vec3, n: &Vec3, etai_over_etat: f64) -> Vec3 {
+    let cos_theta = uv.flip().dot(n);
+    let r_out_parallel = etai_over_etat * (*uv + cos_theta * *n);
+    let r_out_perp = -(1.0 - r_out_parallel.length_squared()).sqrt() * *n;
+    r_out_parallel + r_out_perp
+}
+
+pub struct Dielectric {
+    ref_idx: f64,
+}
+
+impl Dielectric {
+    pub fn new(ref_idx: f64) -> Dielectric {
+        Dielectric { ref_idx }
+    }
+}
+
+fn schlick(cosine: f64, ref_idx: f64) -> f64 {
+    let r0 = ((1.0 - ref_idx) / (1.0 + ref_idx)).powi(2);
+    r0 + (1.0 - r0) * (1.0 - cosine).powi(5)
+}
+
+impl Material for Dielectric {
+    fn scatter(&self, ray: &Ray, hit: &Hit, rng: &mut ThreadRng) -> Option<Scatter> {
+        let attenuation = Vec3::new(1.0, 1.0, 1.0);
+        let etai_over_etat = if hit.front_face {
+            1.0 / self.ref_idx
+        } else {
+            self.ref_idx
+        };
+        let unit_direction = ray.direction.unit();
+        let cos_theta = (unit_direction.flip().dot(&hit.normal)).min(1.0);
+        let sin_theta = (1.0 - cos_theta.powi(2)).sqrt();
+        let reflect_prob = schlick(cos_theta, etai_over_etat);
+
+        if etai_over_etat * sin_theta > 1.0 || rng.sample(Uniform::new(0.0, 1.0)) < reflect_prob {
+            let reflected = reflect(&unit_direction, &hit.normal);
+            let scattered = Ray::new(hit.point, reflected);
+            Some(Scatter {
+                scattered,
+                attenuation,
+            })
+        } else {
+            let refacted = refact(&unit_direction, &hit.normal, etai_over_etat);
+            let scattered = Ray::new(hit.point, refacted);
+            Some(Scatter {
+                scattered,
+                attenuation,
+            })
         }
     }
 }

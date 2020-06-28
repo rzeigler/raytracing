@@ -51,7 +51,7 @@ fn main() -> Result<()> {
     };
     let out_path = Path::new(matches.value_of("out").unwrap());
 
-    let c1 = Lambertian::new(Vec3::new(0.7, 0.3, 0.3));
+    let c1 = Lambertian::new(Vec3::new(0.1, 0.2, 0.5));
     let o1 = Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, &c1);
 
     let c2 = Lambertian::new(Vec3::new(0.8, 0.8, 0.0));
@@ -60,10 +60,14 @@ fn main() -> Result<()> {
     let c3 = Metal::new(Vec3::new(0.8, 0.6, 0.2), 0.3);
     let o3 = Sphere::new(Vec3::new(1.0, 0.0, -1.0), 0.5, &c3);
 
-    let c4 = Metal::new(Vec3::new(0.8, 0.8, 0.8), 1.0);
-    let o4 = Sphere::new(Vec3::new(-1.0, 0.0, -1.0), 0.5, &c4);
+    // Hollow glass sphere
+    let glass = Dielectric::new(1.5);
+    let outer_sphere = Sphere::new(Vec3::new(-1.0, 0.0, -1.0), 0.5, &glass);
+    let inner_sphere = Sphere::new(Vec3::new(-1.0, 0.0, -1.0), -0.45, &glass);
+    let glass_sphere: Vec<&(dyn Hittable + Send + Sync)> = vec![&outer_sphere, &inner_sphere];
+    let glass_world = World::new(glass_sphere);
 
-    let hittables: Vec<&(dyn Hittable + Send + Sync)> = vec![&o1, &o2, &o3, &o4];
+    let hittables: Vec<&(dyn Hittable + Send + Sync)> = vec![&o1, &o2, &o3, &glass_world];
 
     // let hittables: Vec<Box<dyn Hittable + Send + Sync + 'static>> = vec![
     //     Box::new(Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5), &color1),
