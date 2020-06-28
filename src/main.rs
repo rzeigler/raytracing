@@ -71,16 +71,14 @@ fn main() -> Result<()> {
 
     let hittables: Vec<&(dyn Hittable + Send + Sync)> = vec![&o1, &o2, &o3, &glass_world];
 
-    let world = World::new(hittables);
-
     let image_width = f64::from(width);
     let image_height = f64::from(height);
     let aspect_ratio = image_width / image_height;
-    let lookfrom = Vec3::new(3.0, 3.0, 2.0);
-    let lookat = Vec3::new(0.0, 0.0, -1.0);
+    let lookfrom = Vec3::new(13.0, 2.0, 3.0);
+    let lookat = Vec3::new(0.0, 0.0, 0.0);
     let vup = Vec3::new(0.0, 1.0, 0.0);
-    let dist_to_focus = (lookfrom - lookat).length();
-    let aperture = 2.0;
+    let dist_to_focus = 10.0;
+    let aperture = 0.1;
     let camera = draw::Camera::new(
         lookfrom,
         lookat,
@@ -91,7 +89,7 @@ fn main() -> Result<()> {
         dist_to_focus,
     );
 
-    /**
+    /*
      * Build the world... this is kind of a bad interface because I tried to be clever with refs
      */
     let ground_material = Lambertian::new(Vec3::new(0.5, 0.5, 0.5));
@@ -103,6 +101,7 @@ fn main() -> Result<()> {
 
     let mut rng = thread_rng();
     let random_double = Uniform::new(0.0, 1.0);
+    let fuzz_dist = Uniform::new(0.0, 0.5);
 
     let mut material_vec: Vec<Box<dyn Material>> = Vec::new();
     // Temporary storage so that we can wire up materials afterwards
@@ -123,7 +122,7 @@ fn main() -> Result<()> {
                     Box::new(Lambertian::new(albedo))
                 } else if choose_mat < 0.95 {
                     let albedo = Vec3::random_dist(&mut rng, &dist_05_1);
-                    let fuzz = dist_05_1.sample(&mut rng);
+                    let fuzz = fuzz_dist.sample(&mut rng);
                     Box::new(Metal::new(albedo, fuzz))
                 } else {
                     Box::new(Dielectric::new(1.5))
@@ -154,6 +153,7 @@ fn main() -> Result<()> {
     for sphere in sphere_vec.iter() {
         hittables.push(sphere.as_ref());
     }
+    hittables.push(ground.as_ref());
 
     let world = World::new(hittables);
 
