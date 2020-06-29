@@ -270,9 +270,10 @@ fn reflect(v: &Vec3, n: &Vec3) -> Vec3 {
 impl Material for Metal {
     fn scatter(&self, ray: &Ray, hit: &Hit, rng: &mut ThreadRng) -> Option<Scatter> {
         let reflected = reflect(&ray.direction.unit(), &hit.normal);
-        let scattered = Ray::new(
+        let scattered = Ray::new_at(
             hit.point,
             reflected + self.fuzz * Vec3::new_raw(UnitBall.sample(rng)),
+            ray.time,
         );
         if scattered.direction.dot(&hit.normal) > 0.0 {
             Some(Scatter {
@@ -322,14 +323,14 @@ impl Material for Dielectric {
 
         if etai_over_etat * sin_theta > 1.0 || rng.sample(Uniform::new(0.0, 1.0)) < reflect_prob {
             let reflected = reflect(&unit_direction, &hit.normal);
-            let scattered = Ray::new(hit.point, reflected);
+            let scattered = Ray::new_at(hit.point, reflected, ray.time);
             Some(Scatter {
                 scattered,
                 attenuation,
             })
         } else {
             let refacted = refact(&unit_direction, &hit.normal, etai_over_etat);
-            let scattered = Ray::new(hit.point, refacted);
+            let scattered = Ray::new_at(hit.point, refacted, ray.time);
             Some(Scatter {
                 scattered,
                 attenuation,
