@@ -3,6 +3,7 @@ use rand::rngs::ThreadRng;
 use rand::Rng;
 use rand_distr::UnitBall;
 use std::ops::*;
+use std::sync::Arc;
 
 #[derive(Clone, Copy)]
 pub struct Vec3 {
@@ -367,14 +368,14 @@ pub trait Hittable {
     fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit>;
 }
 
-pub struct Sphere<'ma> {
+pub struct Sphere {
     center: Vec3,
     radius: f64,
-    material: &'ma dyn Material,
+    material: Arc<dyn Material + Sync + Send>,
 }
 
-impl<'ma> Sphere<'ma> {
-    pub fn new(center: Vec3, radius: f64, material: &'ma dyn Material) -> Sphere {
+impl Sphere {
+    pub fn new(center: Vec3, radius: f64, material: Arc<dyn Material + Sync + Send>) -> Sphere {
         Sphere {
             center,
             radius,
@@ -383,7 +384,7 @@ impl<'ma> Sphere<'ma> {
     }
 }
 
-impl<'ma> Hittable for Sphere<'ma> {
+impl Hittable for Sphere {
     fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit> {
         let oc = ray.origin - self.center;
         let a = ray.direction.length_squared();
@@ -398,28 +399,40 @@ impl<'ma> Hittable for Sphere<'ma> {
             if t < max_t && t > min_t {
                 let point = ray.at(t);
                 let outward_normal = (point - self.center) / self.radius;
-                return Some(Hit::new(point, outward_normal, t, ray, self.material));
+                return Some(Hit::new(
+                    point,
+                    outward_normal,
+                    t,
+                    ray,
+                    self.material.as_ref(),
+                ));
             }
             let t = (-half_b + root) / a;
             if t < max_t && t > min_t {
                 let point = ray.at(t);
                 let outward_normal = (point - self.center) / self.radius;
-                return Some(Hit::new(point, outward_normal, t, ray, self.material));
+                return Some(Hit::new(
+                    point,
+                    outward_normal,
+                    t,
+                    ray,
+                    self.material.as_ref(),
+                ));
             }
             None
         }
     }
 }
 
-pub struct World<'a>(Vec<&'a (dyn Hittable + Send + Sync)>);
+pub struct World(Vec<Box<dyn Hittable + Send + Sync>>);
 
-impl<'a> World<'a> {
-    pub fn new(v: Vec<&'a (dyn Hittable + Send + Sync)>) -> World {
+impl World {
+    pub fn new(v: Vec<Box<dyn Hittable + Send + Sync>>) -> World {
         World(v)
     }
 }
 
-impl<'a> Hittable for World<'a> {
+impl Hittable for World {
     fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit> {
         let mut current_hit: Option<Hit> = None;
         for hittable in self.0.iter() {

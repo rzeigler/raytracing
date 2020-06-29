@@ -6,6 +6,7 @@ use rand::*;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
+use std::sync::Arc;
 
 mod geom;
 use geom::*;
@@ -53,24 +54,6 @@ fn main() -> Result<()> {
     };
     let out_path = Path::new(matches.value_of("out").unwrap());
 
-    let c1 = Lambertian::new(Vec3::new(0.1, 0.2, 0.5));
-    let o1 = Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, &c1);
-
-    let c2 = Lambertian::new(Vec3::new(0.8, 0.8, 0.0));
-    let o2 = Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0, &c2);
-
-    let c3 = Metal::new(Vec3::new(0.8, 0.6, 0.2), 0.3);
-    let o3 = Sphere::new(Vec3::new(1.0, 0.0, -1.0), 0.5, &c3);
-
-    // Hollow glass sphere
-    let glass = Dielectric::new(1.5);
-    let outer_sphere = Sphere::new(Vec3::new(-1.0, 0.0, -1.0), 0.5, &glass);
-    let inner_sphere = Sphere::new(Vec3::new(-1.0, 0.0, -1.0), -0.45, &glass);
-    let glass_sphere: Vec<&(dyn Hittable + Send + Sync)> = vec![&outer_sphere, &inner_sphere];
-    let glass_world = World::new(glass_sphere);
-
-    let hittables: Vec<&(dyn Hittable + Send + Sync)> = vec![&o1, &o2, &o3, &glass_world];
-
     let image_width = f64::from(width);
     let image_height = f64::from(height);
     let aspect_ratio = image_width / image_height;
@@ -89,74 +72,7 @@ fn main() -> Result<()> {
         dist_to_focus,
     );
 
-    /*
-     * Build the world... this is kind of a bad interface because I tried to be clever with refs
-     */
-    let ground_material = Lambertian::new(Vec3::new(0.5, 0.5, 0.5));
-    let ground = Box::new(Sphere::new(
-        Vec3::new(0.0, -1000.0, 0.0),
-        1000.0,
-        &ground_material,
-    ));
-
-    let mut rng = thread_rng();
-    let random_double = Uniform::new(0.0, 1.0);
-    let fuzz_dist = Uniform::new(0.0, 0.5);
-
-    let mut material_vec: Vec<Box<dyn Material>> = Vec::new();
-    // Temporary storage so that we can wire up materials afterwards
-    let mut sphere_descr: Vec<(Vec3, f64)> = Vec::new();
-    for a in -11..11 {
-        for b in -11..11 {
-            let choose_mat = random_double.sample(&mut rng);
-            let center = Vec3::new(
-                f64::from(a) + 0.9 * random_double.sample(&mut rng),
-                0.2,
-                f64::from(b) + 0.9 * random_double.sample(&mut rng),
-            );
-
-            let dist_05_1 = Uniform::new(0.5, 1.0);
-            if (center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
-                let mat: Box<dyn Material> = if choose_mat < 0.8 {
-                    let albedo = Vec3::random_dist(&mut rng, &random_double)
-                        * Vec3::random_dist(&mut rng, &random_double);
-                    Box::new(Lambertian::new(albedo))
-                } else if choose_mat < 0.95 {
-                    let albedo = Vec3::random_dist(&mut rng, &dist_05_1);
-                    let fuzz = fuzz_dist.sample(&mut rng);
-                    Box::new(Metal::new(albedo, fuzz))
-                } else {
-                    Box::new(Dielectric::new(1.5))
-                };
-                material_vec.push(mat);
-                sphere_descr.push((center, 0.2f64));
-            }
-        }
-    }
-
-    material_vec.push(Box::new(Dielectric::new(1.5)));
-    sphere_descr.push((Vec3::new(0.0, 1.0, 0.0), 1.0));
-
-    material_vec.push(Box::new(Lambertian::new(Vec3::new(0.4, 0.2, 0.1))));
-    sphere_descr.push((Vec3::new(-4.0, 1.0, 0.0), 1.0));
-
-    material_vec.push(Box::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)));
-    sphere_descr.push((Vec3::new(4.0, 1.0, 0.0), 1.0));
-
-    let material_vec = material_vec;
-    let sphere_vec: Vec<Box<Sphere>> = sphere_descr
-        .iter()
-        .zip(material_vec.iter())
-        .map(|(desc, mat)| Box::new(Sphere::new(desc.0, desc.1, mat.as_ref())))
-        .collect();
-
-    let mut hittables: Vec<&(dyn Hittable + Send + Sync)> = Vec::new();
-    for sphere in sphere_vec.iter() {
-        hittables.push(sphere.as_ref());
-    }
-    hittables.push(ground.as_ref());
-
-    let world = World::new(hittables);
+    let world = create_large();
 
     let content = draw::draw(width, height, &camera, &world);
     write_png(width, height, &content, out_path)
@@ -174,4 +90,76 @@ fn write_png(width: u32, height: u32, data: &Vec<u8>, out_path: &Path) -> Result
     writer
         .write_image_data(&data)
         .context("failed to write data")
+}
+
+fn create_large() -> World {
+    let mut rng = thread_rng();
+    let random_double = Uniform::new(0.0, 1.0);
+    let fuzz_dist = Uniform::new(0.0, 0.5);
+
+    let mut objects: Vec<Box<dyn Hittable + Sync + Send>> = Vec::new();
+    /*
+     * Build the world... this is kind of a bad interface because I tried to be clever with refs
+     */
+    let ground: Box<dyn Hittable + Sync + Send> = Box::new(Sphere::new(
+        Vec3::new(0.0, -1000.0, 0.0),
+        1000.0,
+        Arc::new(Lambertian::new(Vec3::new(0.5, 0.5, 0.5))),
+    ));
+
+    objects.push(ground);
+
+    let spheres = (-11..11)
+        .flat_map(|a| (-11..11).map(move |b| (a, b)))
+        .map(|(a, b)| {
+            let choose_mat = random_double.sample(&mut rng);
+            let center = Vec3::new(
+                f64::from(a) + 0.9 * random_double.sample(&mut rng),
+                0.2,
+                f64::from(b) + 0.9 * random_double.sample(&mut rng),
+            );
+
+            let dist_05_1 = Uniform::new(0.5, 1.0);
+            if (center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
+                let mat: Arc<dyn Material + Send + Sync> = if choose_mat < 0.8 {
+                    let albedo = Vec3::random_dist(&mut rng, &random_double)
+                        * Vec3::random_dist(&mut rng, &random_double);
+                    Arc::new(Lambertian::new(albedo))
+                } else if choose_mat < 0.95 {
+                    let albedo = Vec3::random_dist(&mut rng, &dist_05_1);
+                    let fuzz = fuzz_dist.sample(&mut rng);
+                    Arc::new(Metal::new(albedo, fuzz))
+                } else {
+                    Arc::new(Dielectric::new(1.5))
+                };
+                let sphere: Box<dyn Hittable + Send + Sync> =
+                    Box::new(Sphere::new(center, 0.2f64, mat));
+                Some(sphere)
+            } else {
+                None
+            }
+        })
+        .flatten();
+
+    objects.extend(spheres);
+
+    objects.push(Box::new(Sphere::new(
+        Vec3::new(0.0, 1.0, 0.0),
+        1.0,
+        Arc::new(Dielectric::new(1.5)),
+    )));
+
+    objects.push(Box::new(Sphere::new(
+        Vec3::new(-4.0, 1.0, 0.0),
+        1.0,
+        Arc::new(Lambertian::new(Vec3::new(0.4, 0.2, 0.1))),
+    )));
+
+    objects.push(Box::new(Sphere::new(
+        Vec3::new(4.0, 1.0, 0.0),
+        1.0,
+        Arc::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)),
+    )));
+
+    World::new(objects)
 }
