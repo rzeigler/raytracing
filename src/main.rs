@@ -70,6 +70,8 @@ fn main() -> Result<()> {
         aspect_ratio,
         aperture,
         dist_to_focus,
+        0.0,
+        1.0,
     );
 
     let world = create_large();
@@ -121,19 +123,31 @@ fn create_large() -> World {
 
             let dist_05_1 = Uniform::new(0.5, 1.0);
             if (center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
-                let mat: Arc<dyn Material + Send + Sync> = if choose_mat < 0.8 {
+                let sphere: Box<dyn Hittable + Send + Sync> = if choose_mat < 0.8 {
+                    /*
+                                        auto center2 = center + vec3(0, random_double(0,.5), 0);
+                    world.add(make_shared<moving_sphere>(
+                        center, center2, 0.0, 1.0, 0.2, sphere_material));
+                    */
+                    let center2 = center + Vec3::new(0.0, rng.sample(&fuzz_dist), 0.0);
                     let albedo = Vec3::random_dist(&mut rng, &random_double)
                         * Vec3::random_dist(&mut rng, &random_double);
-                    Arc::new(Lambertian::new(albedo))
+                    let mat = Arc::new(Lambertian::new(albedo));
+                    Box::new(Sphere::new_moving(
+                        Timed::new(center, 0.0),
+                        Timed::new(center2, 1.0),
+                        0.2f64,
+                        mat,
+                    ))
                 } else if choose_mat < 0.95 {
                     let albedo = Vec3::random_dist(&mut rng, &dist_05_1);
                     let fuzz = fuzz_dist.sample(&mut rng);
-                    Arc::new(Metal::new(albedo, fuzz))
+                    let mat = Arc::new(Metal::new(albedo, fuzz));
+                    Box::new(Sphere::new(center, 0.2f64, mat))
                 } else {
-                    Arc::new(Dielectric::new(1.5))
+                    let mat = Arc::new(Dielectric::new(1.5));
+                    Box::new(Sphere::new(center, 0.2f64, mat))
                 };
-                let sphere: Box<dyn Hittable + Send + Sync> =
-                    Box::new(Sphere::new(center, 0.2f64, mat));
                 Some(sphere)
             } else {
                 None

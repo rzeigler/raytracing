@@ -42,6 +42,7 @@ pub struct Camera {
     v: Vec3,
     w: Vec3,
     lens_radius: f64,
+    time_distribution: Uniform<f64>,
 }
 
 fn degrees_to_radians(degrees: f64) -> f64 {
@@ -57,6 +58,8 @@ impl Camera {
         aspect_ratio: f64,
         aperture: f64,
         focus_dist: f64,
+        time0: f64,
+        time1: f64,
     ) -> Camera {
         let theta = degrees_to_radians(vfov);
         let h = (theta / 2.0).tan();
@@ -81,16 +84,18 @@ impl Camera {
             v,
             w,
             lens_radius,
+            time_distribution: Uniform::new(time0, time1),
         }
     }
 
-    pub fn cast_ray(&self, rng: &mut ThreadRng, s: f64, t: f64) -> Ray {
+    pub fn cast_ray(&self, rng: &mut ThreadRng, u: f64, v: f64) -> Ray {
         let [x, y] = UnitDisc.sample(rng);
         let rd = self.lens_radius * Vec3::new(x, y, 0.0);
         let offset = self.u * rd.x() + self.v * rd.y();
-        Ray::new(
+        Ray::new_at(
             self.origin + offset,
-            self.lower_left_corner + s * self.horizontal + t * self.vertical - self.origin - offset,
+            self.lower_left_corner + u * self.horizontal + v * self.vertical - self.origin - offset,
+            rng.sample(self.time_distribution),
         )
     }
 }

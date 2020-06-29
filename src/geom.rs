@@ -196,18 +196,24 @@ impl Add<f64> for Vec3 {
 pub struct Ray {
     pub origin: Vec3,
     pub direction: Vec3,
+    pub time: f64,
 }
 
 impl Ray {
-    pub fn zero() -> Ray {
+    pub fn new(origin: Vec3, direction: Vec3) -> Ray {
         Ray {
-            origin: Vec3::zero(),
-            direction: Vec3::zero(),
+            origin,
+            direction,
+            time: 0.0,
         }
     }
 
-    pub fn new(origin: Vec3, direction: Vec3) -> Ray {
-        Ray { origin, direction }
+    pub fn new_at(origin: Vec3, direction: Vec3, at: f64) -> Ray {
+        Ray {
+            origin,
+            direction,
+            time: at,
+        }
     }
 
     pub fn at(&self, t: f64) -> Vec3 {
@@ -239,7 +245,7 @@ impl Material for Lambertian {
     fn scatter(&self, ray: &Ray, hit: &Hit, rng: &mut ThreadRng) -> Option<Scatter> {
         let scatter_direction = hit.normal + Vec3::new_raw(UnitBall.sample(rng));
         Some(Scatter {
-            scattered: Ray::new(hit.point, scatter_direction),
+            scattered: Ray::new_at(hit.point, scatter_direction, ray.time),
             attenuation: self.albedo,
         })
     }
@@ -368,25 +374,67 @@ pub trait Hittable {
     fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit>;
 }
 
+// Is it possible to implement a Moving<A: Hittable>?
+// The problem I forsee is that the material itself doesn't move so how would we blend?
+// Probably surmountable
+pub struct Timed<A> {
+    value: A,
+    time: f64,
+}
+
+impl<A> Timed<A> {
+    pub fn new(value: A, time: f64) -> Timed<A> {
+        Timed { value, time }
+    }
+}
+
 pub struct Sphere {
-    center: Vec3,
+    center0: Timed<Vec3>,
+    center1: Timed<Vec3>,
     radius: f64,
-    material: Arc<dyn Material + Sync + Send>,
+    material: Arc<dyn Material + Send + Sync>,
 }
 
 impl Sphere {
-    pub fn new(center: Vec3, radius: f64, material: Arc<dyn Material + Sync + Send>) -> Sphere {
+    pub fn new(center: Vec3, radius: f64, material: Arc<dyn Material + Send + Sync>) -> Sphere {
         Sphere {
-            center,
+            center0: Timed {
+                value: center,
+                time: 0.0,
+            },
+            center1: Timed {
+                value: center,
+                time: f64::INFINITY,
+            },
             radius,
             material,
         }
+    }
+
+    pub fn new_moving(
+        center0: Timed<Vec3>,
+        center1: Timed<Vec3>,
+        radius: f64,
+        material: Arc<dyn Material + Send + Sync>,
+    ) -> Sphere {
+        Sphere {
+            center0,
+            center1,
+            radius,
+            material,
+        }
+    }
+
+    fn center(&self, time: f64) -> Vec3 {
+        self.center0.value
+            + ((time - self.center0.time) / (self.center1.time - self.center0.time))
+                * (self.center1.value - self.center0.value)
     }
 }
 
 impl Hittable for Sphere {
     fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit> {
-        let oc = ray.origin - self.center;
+        let oc = ray.origin - self.center(ray.time);
         let a = ray.direction.length_squared();
         let half_b = oc.dot(&ray.direction);
         let c = oc.length_squared() - self.radius * self.radius;
@@ -398,7 +446,7 @@ impl Hittable for Sphere {
             let t = (-half_b - root) / a;
             if t < max_t && t > min_t {
                 let point = ray.at(t);
-                let outward_normal = (point - self.center) / self.radius;
+                let outward_normal = (point - self.center(ray.time)) / self.radius;
                 return Some(Hit::new(
                     point,
                     outward_normal,
@@ -410,7 +458,7 @@ impl Hittable for Sphere {
             let t = (-half_b + root) / a;
             if t < max_t && t > min_t {
                 let point = ray.at(t);
-                let outward_normal = (point - self.center) / self.radius;
+                let outward_normal = (point - self.center(ray.time)) / self.radius;
                 return Some(Hit::new(
                     point,
                     outward_normal,
