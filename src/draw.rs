@@ -5,6 +5,7 @@ use rand::*;
 use rand_distr::{Distribution, UnitBall, UnitDisc};
 use rayon::prelude::*;
 use std::ops::AddAssign;
+use std::ops::Deref;
 struct Pixel(Vec3);
 
 impl Pixel {
@@ -103,7 +104,10 @@ impl Camera {
 const MAX_DEPTH: u32 = 50;
 
 // TODO: Pass in the camera along with the world
-pub fn draw<H: Hittable + Sync>(width: u32, height: u32, camera: &Camera, world: &H) -> Vec<u8> {
+pub fn draw<H>(width: u32, height: u32, camera: &Camera, world: &H) -> Vec<u8>
+where
+    H: Deref<Target = dyn Hittable + Send + Sync> + Send + Sync,
+{
     let image_width = f64::from(width);
     let image_height = f64::from(height);
     let samples_per_pixel = 100u32;
@@ -138,7 +142,12 @@ pub fn draw<H: Hittable + Sync>(width: u32, height: u32, camera: &Camera, world:
     output_buffer
 }
 
-fn ray_color<H: Hittable>(rng: &mut ThreadRng, ray: &Ray, world: &H, depth: u32) -> Pixel {
+fn ray_color<H: Deref<Target = dyn Hittable + Send + Sync>>(
+    rng: &mut ThreadRng,
+    ray: &Ray,
+    world: &H,
+    depth: u32,
+) -> Pixel {
     if depth == 0 {
         return Pixel(Vec3::zero());
     }

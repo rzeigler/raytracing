@@ -94,7 +94,7 @@ fn write_png(width: u32, height: u32, data: &Vec<u8>, out_path: &Path) -> Result
         .context("failed to write data")
 }
 
-fn create_large() -> World {
+fn create_large() -> Box<dyn Hittable + Send + Sync> {
     let mut rng = thread_rng();
     let random_double = Uniform::new(0.0, 1.0);
     let fuzz_dist = Uniform::new(0.0, 0.5);
@@ -175,5 +175,5 @@ fn create_large() -> World {
         Arc::new(Metal::new(Vec3::new(0.7, 0.6, 0.5), 0.0)),
     )));
 
-    World::new(objects)
+    bvh_split_hittables(&mut rng, objects, 0.0, 1.0)
 }
