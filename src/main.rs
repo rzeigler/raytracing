@@ -106,7 +106,10 @@ fn create_large() -> Box<dyn Hittable + Send + Sync> {
     let ground: Box<dyn Hittable + Sync + Send> = Box::new(Sphere::new(
         Vec3::new(0.0, -1000.0, 0.0),
         1000.0,
-        Arc::new(Lambertian::new(Vec3::new(0.5, 0.5, 0.5))),
+        Arc::new(Lambertian::new(Arc::new(CheckerTexture::new(
+            Arc::new(SolidColor::new(0.2, 0.3, 0.1)),
+            Arc::new(SolidColor::new(0.9, 0.9, 0.9)),
+        )))),
     ));
 
     objects.push(ground);
@@ -132,7 +135,7 @@ fn create_large() -> Box<dyn Hittable + Send + Sync> {
                     let center2 = center + Vec3::new(0.0, rng.sample(&fuzz_dist), 0.0);
                     let albedo = Vec3::random_dist(&mut rng, &random_double)
                         * Vec3::random_dist(&mut rng, &random_double);
-                    let mat = Arc::new(Lambertian::new(albedo));
+                    let mat = Arc::new(Lambertian::new(Arc::new(SolidColor::new_vec(albedo))));
                     Box::new(Sphere::new_moving(
                         Timed::new(center, 0.0),
                         Timed::new(center2, 1.0),
@@ -166,7 +169,9 @@ fn create_large() -> Box<dyn Hittable + Send + Sync> {
     objects.push(Box::new(Sphere::new(
         Vec3::new(-4.0, 1.0, 0.0),
         1.0,
-        Arc::new(Lambertian::new(Vec3::new(0.4, 0.2, 0.1))),
+        Arc::new(Lambertian::new(Arc::new(SolidColor::new_vec(Vec3::new(
+            0.4, 0.2, 0.1,
+        ))))),
     )));
 
     objects.push(Box::new(Sphere::new(

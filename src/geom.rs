@@ -3,6 +3,7 @@ use rand::rngs::ThreadRng;
 use rand::Rng;
 use rand_distr::UnitBall;
 use std::cmp::Ordering;
+use std::f64::consts::PI;
 use std::ops::*;
 use std::sync::Arc;
 
@@ -233,11 +234,11 @@ pub trait Material: Sync {
 }
 
 pub struct Lambertian {
-    albedo: Vec3,
+    albedo: Arc<dyn Texture + Sync + Send>,
 }
 
 impl Lambertian {
-    pub fn new(albedo: Vec3) -> Lambertian {
+    pub fn new(albedo: Arc<dyn Texture + Sync + Send>) -> Lambertian {
         Lambertian { albedo }
     }
 }
@@ -247,7 +248,7 @@ impl Material for Lambertian {
         let scatter_direction = hit.normal + Vec3::new_raw(UnitBall.sample(rng));
         Some(Scatter {
             scattered: Ray::new_at(hit.point, scatter_direction, ray.time),
-            attenuation: self.albedo,
+            attenuation: self.albedo.color(hit.u, hit.v, &hit.point),
         })
     }
 }
@@ -344,6 +345,8 @@ pub struct Hit<'ma> {
     pub point: Vec3,
     pub normal: Vec3,
     pub t: f64,
+    pub u: f64,
+    pub v: f64,
     pub front_face: bool,
     pub material: &'ma dyn Material,
 }
@@ -353,6 +356,8 @@ impl<'ma> Hit<'ma> {
         point: Vec3,
         outward_normal: Vec3,
         t: f64,
+        u: f64,
+        v: f64,
         ray: &Ray,
         material: &'ma dyn Material,
     ) -> Hit<'ma> {
@@ -366,6 +371,8 @@ impl<'ma> Hit<'ma> {
             point,
             normal,
             t,
+            u,
+            v,
             front_face,
             material,
         }
@@ -435,6 +442,12 @@ impl Sphere {
     }
 }
 
+fn get_sphere_uv(point: &Vec3) -> (f64, f64) {
+    let phi = point.z().atan2(point.x());
+    let theta = point.y().asin();
+    (1.0 - (phi + PI) / (2.0 * PI), (theta + PI / 2.0) / PI)
+}
+
 impl Hittable for Sphere {
     fn hit(&self, ray: &Ray, min_t: f64, max_t: f64) -> Option<Hit> {
         let oc = ray.origin - self.center(ray.time);
@@ -450,10 +463,13 @@ impl Hittable for Sphere {
             if t < max_t && t > min_t {
                 let point = ray.at(t);
                 let outward_normal = (point - self.center(ray.time)) / self.radius;
+                let (u, v) = get_sphere_uv(&(point - self.center(ray.time)));
                 return Some(Hit::new(
                     point,
                     outward_normal,
                     t,
+                    u,
+                    v,
                     ray,
                     self.material.as_ref(),
                 ));
@@ -461,11 +477,14 @@ impl Hittable for Sphere {
             let t = (-half_b + root) / a;
             if t < max_t && t > min_t {
                 let point = ray.at(t);
+                let (u, v) = get_sphere_uv(&(point - self.center(ray.time)));
                 let outward_normal = (point - self.center(ray.time)) / self.radius;
                 return Some(Hit::new(
                     point,
                     outward_normal,
                     t,
+                    u,
+                    v,
                     ray,
                     self.material.as_ref(),
                 ));
@@ -688,7 +707,7 @@ impl Hittable for BVHNode {
 }
 
 pub trait Texture {
-    fn color(u: f64, v: f64, point: &Vec3) -> Vec3;
+    fn color(&self, u: f64, v: f64, point: &Vec3) -> Vec3;
 }
 
 pub struct SolidColor {
@@ -699,6 +718,41 @@ impl SolidColor {
     pub fn new(r: f64, g: f64, b: f64) -> SolidColor {
         SolidColor {
             color: Vec3::new(r, g, b),
+        }
+    }
+
+    pub fn new_vec(vec: Vec3) -> SolidColor {
+        SolidColor { color: vec }
+    }
+}
+
+impl Texture for SolidColor {
+    fn color(&self, _u: f64, _v: f64, _point: &Vec3) -> Vec3 {
+        self.color
+    }
+}
+
+pub struct CheckerTexture {
+    odd: Arc<dyn Texture + Send + Sync>,
+    even: Arc<dyn Texture + Send + Sync>,
+}
+
+impl CheckerTexture {
+    pub fn new(
+        odd: Arc<dyn Texture + Send + Sync>,
+        even: Arc<dyn Texture + Send + Sync>,
+    ) -> CheckerTexture {
+        CheckerTexture { odd, even }
+    }
+}
+
+impl Texture for CheckerTexture {
+    fn color(&self, u: f64, v: f64, point: &Vec3) -> Vec3 {
+        let sines = (10.0 * point.x()).sin() * (10.0 * point.y()).sin() * (10.0 * point.z()).sin();
+        if sines < 0.0 {
+            self.odd.color(u, v, point)
+        } else {
+            self.even.color(u, v, point)
         }
     }
 }
